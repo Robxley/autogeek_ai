@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include "../../src/RecordingEngine/EncoderModule.hpp"
-#include "../../src/RecordingEngine/Log.hpp"
+#include "../../include/agk/RecordingEngine/Log.hpp"
 #include <filesystem>
 #include <vector>
 

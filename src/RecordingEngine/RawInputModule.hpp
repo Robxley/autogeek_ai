@@ -9,6 +9,7 @@
 #include <functional>
 #include <thread>
 #include <atomic>
+#include <mutex>
 
 namespace agk {
 
@@ -58,7 +59,7 @@ namespace agk {
         HWND m_hwnd;
         
         // Window class registration
-        static bool s_classRegistered;
+        static std::once_flag s_registrationFlag;
         static const wchar_t* s_className;
     };
 

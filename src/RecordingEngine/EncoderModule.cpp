@@ -9,7 +9,7 @@ extern "C" {
 }
 
 #include "EncoderModule.hpp"
-#include "Log.hpp"
+#include <agk/RecordingEngine/Log.hpp>
 
 namespace agk {
 
@@ -126,21 +126,78 @@ namespace agk {
             &inLayout, AV_SAMPLE_FMT_FLT, audioFormat->nSamplesPerSec,
             0, nullptr);
         swr_init(m_swrCtx);
+        
+        m_aInputFrame = av_frame_alloc();
+        m_aInputFrame->format = AV_SAMPLE_FMT_FLT;
+        av_channel_layout_default(&m_aInputFrame->ch_layout, 2);
+        
+        m_aFrame = av_frame_alloc();
+        m_aFrame->format = m_aCodecCtx->sample_fmt;
+        av_channel_layout_copy(&m_aFrame->ch_layout, &m_aCodecCtx->ch_layout);
+        m_aFrame->sample_rate = m_aCodecCtx->sample_rate;
 
         return true;
     }
 
-    bool EncoderModule::EncodeVideoFrame(const uint8_t* data, int linesize, int64_t frameIndex) {
+    bool EncoderModule::EncodeVideoFrame(const uint8_t* data, int linesize, int64_t frameIndex, int cropX, int cropY, int cropW, int cropH) {
         if (!m_isInitialized) return false;
 
+        static bool firstFrameLogged = false;
+        if (!firstFrameLogged) {
+            AGK_CORE_INFO("[Encoder] Received first frame for encoding (Frame Index: {}, Linesize: {})", frameIndex, linesize);
+            firstFrameLogged = true;
+        }
+
         std::lock_guard<std::mutex> lock(m_muxMutex);
-        const uint8_t* inData[1] = {data};
-        int inLineSize[1] = {linesize};
-        sws_scale(m_swsCtx, inData, inLineSize, 0, m_vConfig.height, m_vFrame->data, m_vFrame->linesize);
+
+        int actualSourceWidth = m_vConfig.width;
+        int actualSourceHeight = m_vConfig.height;
+
+        // Apply Cropping Strategy (Zero-Copy Offset)
+        const uint8_t* srcData = data;
+        if (cropW > 0 && cropH > 0) {
+            actualSourceWidth = cropW;
+            actualSourceHeight = cropH;
+            
+            // Pointer Math: Advance source pointer to the crop origin (X, Y)
+            // BGRA format = 4 bytes per pixel
+            srcData = data + (cropY * linesize) + (cropX * 4);
+        }
+
+        // Validate and re-initialize the scaler if source dimensions change dynamically
+        if (actualSourceWidth != m_lastSrcW || actualSourceHeight != m_lastSrcH) {
+            if (m_swsCtx) {
+                sws_freeContext(m_swsCtx);
+                m_swsCtx = nullptr;
+            }
+
+            m_swsCtx = sws_getContext(
+                actualSourceWidth, actualSourceHeight, AV_PIX_FMT_BGRA, // Source (Cropped or Not)
+                m_vConfig.width, m_vConfig.height, AV_PIX_FMT_YUV420P, // Dest (Target Encoding Dimensions)
+                SWS_FAST_BILINEAR, nullptr, nullptr, nullptr
+            );
+
+            if (!m_swsCtx) {
+                AGK_CORE_ERROR("[Encoder] sws_getContext failed for {}x{} to {}x{}", actualSourceWidth, actualSourceHeight, m_vConfig.width, m_vConfig.height);
+                return false;
+            }
+
+            m_lastSrcW = actualSourceWidth;
+            m_lastSrcH = actualSourceHeight;
+            AGK_CORE_INFO("[Encoder] Scaler populated for dynamic source width: {}", actualSourceWidth);
+        }
+
+        uint8_t* srcDataArray[1] = { const_cast<uint8_t*>(srcData) };
+        int srcLinesize[1] = { linesize };
+
+        sws_scale(m_swsCtx, srcDataArray, srcLinesize, 0, actualSourceHeight, m_vFrame->data, m_vFrame->linesize);
 
         m_vFrame->pts = frameIndex;
 
-        if (avcodec_send_frame(m_vCodecCtx, m_vFrame) < 0) return false;
+        if (avcodec_send_frame(m_vCodecCtx, m_vFrame) < 0) {
+            AGK_CORE_WARN("[Encoder] Error sending frame to video encoder (Frame: {})", frameIndex);
+            return false;
+        }
 
         AVPacket* pkt = av_packet_alloc();
         while (avcodec_receive_packet(m_vCodecCtx, pkt) == 0) {
@@ -158,25 +215,22 @@ namespace agk {
 
         std::lock_guard<std::mutex> lock(m_muxMutex);
         
-        AVFrame* inputFrame = av_frame_alloc();
-        inputFrame->nb_samples = sampleCount;
-        inputFrame->format = AV_SAMPLE_FMT_FLT;
-        av_channel_layout_default(&inputFrame->ch_layout, 2);
-        av_frame_get_buffer(inputFrame, 0);
-        memcpy(inputFrame->data[0], data, sampleCount * 4 * 2); // Float 32-bit * 2 channels
+        m_aInputFrame->nb_samples = sampleCount;
+        if (m_aInputFrame->data[0] == nullptr || m_aInputFrame->nb_samples > m_aInputFrame->nb_samples) {
+             av_frame_get_buffer(m_aInputFrame, 0);
+        }
+        memcpy(m_aInputFrame->data[0], data, sampleCount * 4 * 2);
 
-        AVFrame* outputFrame = av_frame_alloc();
-        outputFrame->nb_samples = av_rescale_rnd(swr_get_delay(m_swrCtx, m_aCodecCtx->sample_rate) + sampleCount, m_aCodecCtx->sample_rate, m_aCodecCtx->sample_rate, AV_ROUND_UP);
-        outputFrame->format = m_aCodecCtx->sample_fmt;
-        av_channel_layout_copy(&outputFrame->ch_layout, &m_aCodecCtx->ch_layout);
-        outputFrame->sample_rate = m_aCodecCtx->sample_rate;
-        av_frame_get_buffer(outputFrame, 0);
+        m_aFrame->nb_samples = av_rescale_rnd(swr_get_delay(m_swrCtx, m_aCodecCtx->sample_rate) + sampleCount, m_aCodecCtx->sample_rate, m_aCodecCtx->sample_rate, AV_ROUND_UP);
+        if (m_aFrame->data[0] == nullptr || m_aFrame->nb_samples < m_aFrame->nb_samples) {
+            av_frame_get_buffer(m_aFrame, 0);
+        }
 
-        swr_convert(m_swrCtx, outputFrame->data, outputFrame->nb_samples, (const uint8_t**)inputFrame->data, inputFrame->nb_samples);
-        outputFrame->pts = m_audioPts;
-        m_audioPts += outputFrame->nb_samples;
+        swr_convert(m_swrCtx, m_aFrame->data, m_aFrame->nb_samples, (const uint8_t**)m_aInputFrame->data, m_aInputFrame->nb_samples);
+        m_aFrame->pts = m_audioPts;
+        m_audioPts += m_aFrame->nb_samples;
 
-        if (avcodec_send_frame(m_aCodecCtx, outputFrame) == 0) {
+        if (avcodec_send_frame(m_aCodecCtx, m_aFrame) == 0) {
             AVPacket* pkt = av_packet_alloc();
             while (avcodec_receive_packet(m_aCodecCtx, pkt) == 0) {
                 av_packet_rescale_ts(pkt, m_aCodecCtx->time_base, m_aStream->time_base);
@@ -186,9 +240,6 @@ namespace agk {
             }
             av_packet_free(&pkt);
         }
-
-        av_frame_free(&inputFrame);
-        av_frame_free(&outputFrame);
         return true;
     }
 
@@ -225,6 +276,7 @@ namespace agk {
         if (m_swrCtx) swr_free(&m_swrCtx);
         if (m_vFrame) av_frame_free(&m_vFrame);
         if (m_aFrame) av_frame_free(&m_aFrame);
+        if (m_aInputFrame) av_frame_free(&m_aInputFrame);
         if (m_vCodecCtx) avcodec_free_context(&m_vCodecCtx);
         if (m_aCodecCtx) avcodec_free_context(&m_aCodecCtx);
         if (m_fmtCtx) {

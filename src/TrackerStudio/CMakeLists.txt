@@ -5,6 +5,10 @@ add_executable(TrackerStudio
     StudioConfig.cpp
     LiveMonitor.cpp
     SessionReplayer.cpp
+    StudioApp.cpp
+    Widgets/SessionExplorer.cpp
+    Widgets/RecordingConfigUI.cpp
+    Widgets/AppLogUI.cpp
 )
 
 # Liens avec le module RecordingEngine et les dépendances GUI
@@ -15,6 +19,7 @@ target_link_libraries(TrackerStudio
         implot::implot
         SDL3::SDL3
         Vulkan::Vulkan
+        portable_file_dialogs
 )
 
 # Activer les modules C++20 pour la cible

@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "../../src/RecordingEngine/Log.hpp"
+#include "../../include/agk/RecordingEngine/Log.hpp"
 
 TEST(LogSystem, Initialization) {
     // Initialiser le système

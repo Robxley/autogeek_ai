@@ -4,9 +4,9 @@
 add_executable(RecordingEngine_Tests
     test_ConfigSystem.cpp
     test_SyncSystem.cpp
-    test_DXGICapture.cpp
     test_LogSystem.cpp
     test_EncoderModule.cpp
+    test_DXGIMonitorCapture.cpp
 )
 
 # Liens avec GTest et le module à tester

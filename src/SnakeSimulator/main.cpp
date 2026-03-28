@@ -1,13 +1,15 @@
 #include <SDL3/SDL.h>
 #include "SnakeGame.hpp"
 #include "EventSimulator.hpp"
-#include <iostream>
+#include <agk/RecordingEngine/Log.hpp>
 #include <chrono>
 #include <thread>
 
 int main(int argc, char* argv[]) {
+    agk::Log::Init();
+    
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
-        std::cerr << "SDL_Init failed: " << SDL_GetError() << std::endl;
+        AGK_ERROR("SDL_Init failed: {}", SDL_GetError());
         return 1;
     }
 
@@ -41,7 +43,7 @@ int main(int argc, char* argv[]) {
                     case SDLK_Q:     game.SetDirection(agk::Direction::Left); break;
                     case SDLK_D:     game.SetDirection(agk::Direction::Right); break;
                     case SDLK_ESCAPE: quit = true; break;
-                    case SDLK_F1:     debugMode = !debugMode; std::cout << "Debug Mode: " << (debugMode ? "ON" : "OFF") << std::endl; break;
+                    case SDLK_F1:     debugMode = !debugMode; AGK_INFO("Debug Mode: {}", debugMode ? "ON" : "OFF"); break;
                 }
             }
         }
@@ -53,7 +55,7 @@ int main(int argc, char* argv[]) {
             lastUpdate = now;
 
             if (game.IsGameOver()) {
-                std::cout << "Game Over! Score: " << game.GetScore() << ". Resetting..." << std::endl;
+                AGK_INFO("Game Over! Score: {}. Resetting...", game.GetScore());
                 game.Reset();
             }
 

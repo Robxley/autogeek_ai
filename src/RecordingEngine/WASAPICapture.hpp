@@ -8,7 +8,7 @@
 #include <functional>
 #include <thread>
 #include <atomic>
-#include "ConfigSystem.hpp"
+#include <agk/RecordingEngine/ConfigSystem.hpp>
 
 namespace agk {
 

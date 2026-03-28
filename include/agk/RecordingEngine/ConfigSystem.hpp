@@ -4,6 +4,7 @@
 #include <vector>
 #include <filesystem>
 #include <nlohmann/json.hpp>
+#include <mutex>
 
 namespace agk {
 
@@ -40,8 +41,8 @@ namespace agk {
 
     struct Config {
         struct Target {
-            std::string mode = "window";
-            std::string process_name = "game.exe";
+            std::string mode = "monitor_crop";
+            std::string process_name = "";
             std::string window_title = "";
             int monitor_index = 0;
             bool include_cursor = true;
@@ -72,6 +73,7 @@ namespace agk {
             bool gpu_acceleration = true;
             int internal_buffer_size = 60;
             bool drop_frames_on_buffer_full = true;
+            std::string log_directory = "logs";
         } system;
     };
 
@@ -85,10 +87,19 @@ namespace agk {
         bool LoadFromFile(const std::filesystem::path& path);
         bool LoadFromString(const std::string& jsonStr);
 
+        void UpdatePreviewConfig(int width, int height);
+        void UpdateTargetWindow(const std::string& windowTitle);
+        void UpdateTargetProcess(const std::string& processName);
+        void UpdateTargetMode(const std::string& mode);
+
+        bool SaveToFile(const std::filesystem::path& path) const;
+        std::string SaveToString() const;
+
         const Config& GetConfig() const { return m_config; }
 
     private:
         Config m_config;
+        mutable std::mutex m_mutex;
     };
 
 } // namespace agk

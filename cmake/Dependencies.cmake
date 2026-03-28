@@ -43,8 +43,23 @@ FetchContent_Declare(
     GIT_TAG master
 )
 
+# --- Portable File Dialogs ---
+FetchContent_Declare(
+    portable_file_dialogs
+    GIT_REPOSITORY https://github.com/samhocevar/portable-file-dialogs.git
+    GIT_TAG main
+)
+
 # Rendre les dépendances CMake-natives disponibles
 FetchContent_MakeAvailable(spdlog nlohmann_json SDL3 googletest imgui implot)
+
+# --- Configuration Manuelle de PFD ---
+FetchContent_GetProperties(portable_file_dialogs)
+if(NOT portable_file_dialogs_POPULATED)
+    FetchContent_Populate(portable_file_dialogs)
+endif()
+add_library(portable_file_dialogs INTERFACE)
+target_include_directories(portable_file_dialogs INTERFACE ${portable_file_dialogs_SOURCE_DIR})
 
 # --- Configuration Manuelle de ImGui (car pas de CMakeLists.txt natif) ---
 if(NOT TARGET imgui::imgui)

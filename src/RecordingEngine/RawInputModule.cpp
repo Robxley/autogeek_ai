@@ -1,11 +1,14 @@
 #include "RawInputModule.hpp"
 #include "TargetTracker.hpp"
-#include "Log.hpp"
+#include <agk/RecordingEngine/Log.hpp>
 #include <iostream>
+
+#include <mutex>
+#include <vector>
 
 namespace agk {
 
-    bool RawInputModule::s_classRegistered = false;
+    std::once_flag RawInputModule::s_registrationFlag;
     const wchar_t* RawInputModule::s_className = L"RawInputModuleWindow";
 
     RawInputModule::RawInputModule() : m_isRunning(false), m_hwnd(nullptr), m_tracker(nullptr) {}
@@ -40,15 +43,16 @@ namespace agk {
     }
 
     void RawInputModule::MessageLoop() {
-        // Step 1: Register window class (one-time)
-        if (!s_classRegistered) {
+        // Step 1: Register window class (one-time, thread-safe)
+        std::call_once(s_registrationFlag, []() {
             WNDCLASSEXW wc = { sizeof(WNDCLASSEXW) };
             wc.lpfnWndProc = WindowProc;
             wc.hInstance = GetModuleHandle(nullptr);
             wc.lpszClassName = s_className;
-            RegisterClassExW(&wc);
-            s_classRegistered = true;
-        }
+            if (!RegisterClassExW(&wc)) {
+                AGK_CORE_ERROR("[RawInput] Failed to register window class (Error: {:08x})", GetLastError());
+            }
+        });
 
         // Step 2: Create a message-only window
         m_hwnd = CreateWindowExW(0, s_className, L"RawInputWindow", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, GetModuleHandle(nullptr), this);

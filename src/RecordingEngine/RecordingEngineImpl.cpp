@@ -4,11 +4,12 @@
  */
 
 module;
-#include "Log.hpp"
-#include "DXGICapture.hpp"
+#include <agk/RecordingEngine/Log.hpp>
+#include "DXGIMonitorCapture.hpp"
+#include "WGCWindowCapture.hpp"
 #include "EncoderModule.hpp"
 #include "SyncSystem.hpp"
-#include "ConfigSystem.hpp"
+#include <agk/RecordingEngine/ConfigSystem.hpp>
 #include "RawInputModule.hpp"
 #include "EventSerializer.hpp"
 #include "TargetTracker.hpp"
@@ -30,21 +31,35 @@ namespace agk {
     class RecordingEngineImpl : public IRecordingEngine {
     public:
         RecordingEngineImpl() : m_isRunning(false), m_isPaused(false), m_currentFrameIndex(0) {
-            m_config = std::make_unique<Config>(); // Default config
+            m_configSys = std::make_unique<ConfigSystem>();
+            m_config = &m_configSys->GetConfig();
         }
 
         ~RecordingEngineImpl() override {
             Stop();
         }
 
-        bool Initialize() override {
+        bool Initialize(const std::string& configPath = "") override {
             AGK_CORE_INFO("[Engine] Initializing sub-systems...");
             
-            TargetTracker::EnableDpiAwareness();
+            if (!configPath.empty()) {
+                if (m_configSys->LoadFromFile(configPath)) {
+                    AGK_CORE_INFO("[Engine] Loaded configuration from: {}", configPath);
+                    agk::Log::AddFileSink(m_config->system.log_directory);
+                } else {
+                    AGK_CORE_WARN("[Engine] Failed to load config from {}, using defaults.", configPath);
+                }
+            }
 
-            if (!m_capture.Initialize()) {
-                AGK_CORE_ERROR("[Engine] Failed to initialize DXGICapture");
-                return false;
+            if (m_config->target.mode == "monitor" || m_config->target.mode == "monitor_crop") {
+                auto capture = std::make_unique<DXGIMonitorCapture>();
+                if (!capture->Initialize(m_config->target.monitor_index)) {
+                     AGK_CORE_ERROR("[Engine] Failed to initialize DXGIMonitorCapture");
+                     return false;
+                }
+                m_capture = std::move(capture);
+            } else {
+                AGK_CORE_INFO("[Engine] Capture mode set to 'window'. Targeted window will be initialized on Start().");
             }
 
             // Setup Input callback
@@ -64,7 +79,46 @@ namespace agk {
         void Start() override {
             if (m_isRunning) return;
 
-            // Step 1: Create session via SessionManager
+            AGK_CORE_INFO("[Engine] START sequence: mode='{}', process='{}', window='{}'", 
+                m_config->target.mode, m_config->target.process_name, m_config->target.window_title);
+
+            // Step 1: Initialize Capture based on mode
+            if (m_config->target.mode == "window") {
+                if (!m_targetTracker.Update(m_config->target.process_name, m_config->target.window_title)) {
+                    AGK_CORE_ERROR("[Engine] Target process/window not found. Aborting start.");
+                    return;
+                }
+            } else if (m_config->target.mode == "monitor_crop") {
+                if (!m_targetTracker.Update(m_config->target.process_name, m_config->target.window_title)) {
+                    AGK_CORE_WARN("[Engine] Target window not found for monitor_crop. Falling back to full monitor capture without crop.");
+                }
+            }
+
+            if (m_config->target.mode == "window") {
+                auto info = m_targetTracker.GetInfo();
+                auto capture = std::make_unique<WGCWindowCapture>();
+                if (!capture->Initialize(info.hwnd)) {
+                    AGK_CORE_ERROR("[Engine] Failed to initialize WGCWindowCapture for targeted window.");
+                    return;
+                }
+                m_capture = std::move(capture);
+            } else if (!m_capture || !m_capture->IsInitialized()) {
+                auto dxgi = std::make_unique<DXGIMonitorCapture>();
+                if (dxgi->Initialize(m_config->target.monitor_index)) {
+                    m_capture = std::move(dxgi);
+                } else {
+                    AGK_CORE_WARN("[Engine] DXGIMonitorCapture failed. Attempting robust fallback to WGCWindowCapture (Desktop).");
+                    auto wgc = std::make_unique<WGCWindowCapture>();
+                    if (wgc->Initialize(GetDesktopWindow())) {
+                        m_capture = std::move(wgc);
+                    } else {
+                        AGK_CORE_ERROR("[Engine] Severe Error: All monitor capture backends failed.");
+                        return; // Abort cleanly
+                    }
+                }
+            }
+
+            // Step 2: Create session via SessionManager
             if (!m_sessionManager.CreateSession(m_config->storage.base_output_path, *m_config)) {
                 AGK_CORE_ERROR("[Engine] Failed to create session directory");
                 return;
@@ -148,8 +202,36 @@ namespace agk {
             AGK_CORE_INFO("[Engine] Preview callback set ({}x{}).", width, height);
         }
 
+        void SetTargetWindow(const std::string& windowTitle) override {
+            m_configSys->UpdateTargetWindow(windowTitle);
+        }
+
+        void SetTargetProcess(const std::string& processName) override {
+            m_configSys->UpdateTargetProcess(processName);
+        }
+
+        void SetCaptureMode(const std::string& mode) override {
+            m_configSys->UpdateTargetMode(mode);
+        }
+
+        const Config& GetConfig() const override {
+            return m_configSys->GetConfig();
+        }
+
+        bool LoadConfig(const std::string& path) override {
+            return m_configSys->LoadFromFile(path);
+        }
+
+        bool SaveConfig(const std::string& path) override {
+            return m_configSys->SaveToFile(path);
+        }
+
     private:
         void RecordingLoop() {
+            try {
+                winrt::init_apartment(winrt::apartment_type::multi_threaded);
+            } catch (...) {}
+
             AGK_CORE_INFO("[Engine] Entering recording loop...");
             
             const double frameDuration = 1.0 / m_config->video.target_fps;
@@ -169,16 +251,33 @@ namespace agk {
                 }
 
                 // Capture Frame
-                if (auto frame = m_capture.AcquireNextFrame()) {
-                    // Update atomic index for input synchronization
-                    m_currentFrameIndex.store(frameIndex);
-                    
-                    // Encode Frame
-                    m_encoder.EncodeVideoFrame(frame->data, frame->linesize, frameIndex++);
+                if (m_capture) {
+                    if (auto frame = m_capture->AcquireNextFrame()) {
+                        m_currentFrameIndex.store(frameIndex);
+                        
+                        int cropX = 0, cropY = 0, cropW = 0, cropH = 0;
+                        if (m_config->target.mode == "monitor_crop") {
+                            auto info = m_targetTracker.GetInfo();
+                            cropX = (std::max)(0L, info.clientRect.left);
+                            cropY = (std::max)(0L, info.clientRect.top);
+                            cropW = (std::max)(0L, info.clientRect.right - info.clientRect.left);
+                            cropH = (std::max)(0L, info.clientRect.bottom - info.clientRect.top);
 
-                    // Preview Support (Live Monitoring)
-                    if (m_previewCallback) {
-                        UpdatePreview(frame.get(), frameIndex);
+                            if (cropX + cropW > frame->width) cropW = frame->width - cropX;
+                            if (cropY + cropH > frame->height) cropH = frame->height - cropY;
+                            
+                            if (cropW % 2 != 0) cropW--;
+                            if (cropH % 2 != 0) cropH--;
+                            if (cropW <= 0 || cropH <= 0) {
+                                cropX = 0; cropY = 0; cropW = 0; cropH = 0;
+                            }
+                        }
+                        
+                        m_encoder.EncodeVideoFrame(frame->data, frame->linesize, frameIndex++, cropX, cropY, cropW, cropH);
+
+                        if (m_previewCallback) {
+                            UpdatePreview(frame.get(), frameIndex);
+                        }
                     }
                 }
 
@@ -200,11 +299,20 @@ namespace agk {
         }
 
         void UpdatePreview(const CaptureFrame* decodedFrame, int64_t frameIndex) {
-            if (!m_swsPreviewCtx || m_lastPreviewWidth != m_previewWidth || m_lastPreviewHeight != m_previewHeight) {
+            // Re-allocate context only if source or destination dimensions change
+            if (!m_swsPreviewCtx || 
+                m_lastSourceWidth != decodedFrame->width || 
+                m_lastSourceHeight != decodedFrame->height ||
+                m_lastPreviewWidth != m_previewWidth || 
+                m_lastPreviewHeight != m_previewHeight) {
+                
                 if (m_swsPreviewCtx) sws_freeContext(m_swsPreviewCtx);
                 m_swsPreviewCtx = sws_getContext(decodedFrame->width, decodedFrame->height, AV_PIX_FMT_BGRA,
                                                 m_previewWidth, m_previewHeight, AV_PIX_FMT_BGRA,
                                                 SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
+                
+                m_lastSourceWidth = decodedFrame->width;
+                m_lastSourceHeight = decodedFrame->height;
                 m_lastPreviewWidth = m_previewWidth;
                 m_lastPreviewHeight = m_previewHeight;
                 m_previewBuffer.resize(m_previewWidth * m_previewHeight * 4);
@@ -225,8 +333,9 @@ namespace agk {
             m_previewCallback(preview);
         }
 
-        std::unique_ptr<Config> m_config;
-        DXGICapture m_capture;
+        std::unique_ptr<ConfigSystem> m_configSys;
+        const Config* m_config;
+        std::unique_ptr<IFrameProvider> m_capture;
         EncoderModule m_encoder;
         SyncSystem m_sync;
         RawInputModule m_rawInput;
@@ -244,6 +353,8 @@ namespace agk {
         PreviewCallback m_previewCallback;
         int m_previewWidth = 640;
         int m_previewHeight = 360;
+        int m_lastSourceWidth = 0;
+        int m_lastSourceHeight = 0;
         int m_lastPreviewWidth = 0;
         int m_lastPreviewHeight = 0;
         SwsContext* m_swsPreviewCtx = nullptr;

@@ -12,7 +12,8 @@ target_sources(RecordingEngine
         RecordingEngineImpl.cpp
         ConfigSystem.cpp
         Log.cpp
-        DXGICapture.cpp
+        DXGIMonitorCapture.cpp
+        WGCWindowCapture.cpp
         EncoderModule.cpp
         RawInputModule.cpp
         EventSerializer.cpp
@@ -21,9 +22,9 @@ target_sources(RecordingEngine
         WASAPICapture.cpp
 )
 
-# Liens avec les bibliothèques système Windows pour DXGI
+# Liens avec les bibliothèques système Windows pour DXGI et WinRT
 if(WIN32)
-    target_link_libraries(RecordingEngine PRIVATE d3d11 dxgi ole32)
+    target_link_libraries(RecordingEngine PRIVATE d3d11 dxgi ole32 windowsapp dwmapi)
 endif()
 
 

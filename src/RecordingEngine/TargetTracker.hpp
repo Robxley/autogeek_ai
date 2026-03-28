@@ -51,6 +51,7 @@ namespace agk {
         static BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam);
         
         TargetInfo m_info;
+        TargetInfo m_pendingResult; // Temporary for EnumWindowsProc
         std::string m_searchProcessName;
         std::string m_searchWindowTitle;
         mutable std::mutex m_mutex;

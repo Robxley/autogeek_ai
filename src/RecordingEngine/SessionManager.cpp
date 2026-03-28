@@ -3,7 +3,7 @@
 #include <chrono>
 #include <iomanip>
 #include <sstream>
-#include "Log.hpp"
+#include <agk/RecordingEngine/Log.hpp>
 
 namespace agk {
 

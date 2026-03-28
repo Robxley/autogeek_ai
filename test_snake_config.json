@@ -1,0 +1,23 @@
+{
+  "target": {
+    "mode": "monitor",
+    "monitor_index": 0,
+    "process_name": "",
+    "window_title": "AutogeekAI - Snake Debug Simulator",
+    "wait_for_target": true
+  },
+  "recording": {
+    "video": {
+      "target_fps": 30,
+      "width": 800,
+      "height": 600,
+      "encoder": "h264_nvenc"
+    },
+    "audio": {
+      "enabled": false
+    }
+  },
+  "storage": {
+    "base_output_path": "D:\\dev\\projets\\autogeek_ai\\test_recordings"
+  }
+}

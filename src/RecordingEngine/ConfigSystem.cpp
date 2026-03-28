@@ -1,6 +1,6 @@
-#include "ConfigSystem.hpp"
+#include <agk/RecordingEngine/ConfigSystem.hpp>
 #include <fstream>
-#include "Log.hpp"
+#include <agk/RecordingEngine/Log.hpp>
 import RecordingEngine;
 
 using json = nlohmann::json;
@@ -51,6 +51,21 @@ namespace agk {
         }
     }
 
+    void ConfigSystem::UpdateTargetProcess(const std::string& processName) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_config.target.process_name = processName;
+    }
+
+    void ConfigSystem::UpdateTargetWindow(const std::string& windowTitle) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_config.target.window_title = windowTitle;
+    }
+
+    void ConfigSystem::UpdateTargetMode(const std::string& mode) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_config.target.mode = mode;
+    }
+
     bool ConfigSystem::LoadFromString(const std::string& jsonStr) {
         try {
             json j = json::parse(jsonStr);
@@ -74,11 +89,93 @@ namespace agk {
                 if (r.contains("inputs")) m_config.inputs = r["inputs"].get<InputsConfig>();
             }
 
-            // ... autres sections (storage, system) ...
+            if (j.contains("storage")) {
+                const auto& s = j["storage"];
+                m_config.storage.base_output_path = s.value("base_output_path", m_config.storage.base_output_path);
+                m_config.storage.video_subfolder = s.value("video_subfolder", m_config.storage.video_subfolder);
+                m_config.storage.events_filename = s.value("events_filename", m_config.storage.events_filename);
+            }
+
+            if (j.contains("system")) {
+                const auto& s = j["system"];
+                m_config.system.thread_priority = s.value("thread_priority", m_config.system.thread_priority);
+                m_config.system.gpu_acceleration = s.value("gpu_acceleration", m_config.system.gpu_acceleration);
+                m_config.system.internal_buffer_size = s.value("internal_buffer_size", m_config.system.internal_buffer_size);
+                m_config.system.drop_frames_on_buffer_full = s.value("drop_frames_on_buffer_full", m_config.system.drop_frames_on_buffer_full);
+                m_config.system.log_directory = s.value("log_directory", m_config.system.log_directory);
+            }
             
             return true;
         } catch (const std::exception& e) {
             AGK_CORE_ERROR("[ConfigSystem] Error: {}", e.what());
+            return false;
+        }
+    }
+
+    std::string ConfigSystem::SaveToString() const {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        json j;
+        
+        j["target"]["mode"] = m_config.target.mode;
+        j["target"]["process_name"] = m_config.target.process_name;
+        j["target"]["window_title"] = m_config.target.window_title;
+        j["target"]["monitor_index"] = m_config.target.monitor_index;
+        j["target"]["include_cursor"] = m_config.target.include_cursor;
+        j["target"]["wait_for_target"] = m_config.target.wait_for_target;
+        j["target"]["auto_pause_on_minimize"] = m_config.target.auto_pause_on_minimize;
+        j["target"]["auto_resume_on_restore"] = m_config.target.auto_resume_on_restore;
+
+        json& rv = j["recording"]["video"];
+        rv["target_fps"] = m_config.video.target_fps;
+        rv["width"] = m_config.video.width;
+        rv["height"] = m_config.video.height;
+        rv["use_source_resolution"] = m_config.video.use_source_resolution;
+        rv["bitrate_kbps"] = m_config.video.bitrate_kbps;
+        rv["encoder"] = m_config.video.encoder;
+        rv["format"] = m_config.video.format;
+
+        json& ra = j["recording"]["audio"];
+        ra["enabled"] = m_config.audio.enabled;
+        ra["is_process_isolated"] = m_config.audio.is_process_isolated;
+        ra["capture_system"] = m_config.audio.capture_system;
+        ra["capture_mic"] = m_config.audio.capture_mic;
+        ra["system_device"] = m_config.audio.system_device;
+        ra["mic_device"] = m_config.audio.mic_device;
+        ra["audio_bitrate_kbps"] = m_config.audio.audio_bitrate_kbps;
+
+        json& ri = j["recording"]["inputs"];
+        ri["enabled"] = m_config.inputs.enabled;
+        ri["capture_keyboard"] = m_config.inputs.capture_keyboard;
+        ri["capture_mouse"] = m_config.inputs.capture_mouse;
+        ri["capture_gamepad"] = m_config.inputs.capture_gamepad;
+        ri["mouse_sampling_rate_ms"] = m_config.inputs.mouse_sampling_rate_ms;
+        ri["gamepad_polling_rate_ms"] = m_config.inputs.gamepad_polling_rate_ms;
+        ri["gamepad_deadzone"] = m_config.inputs.gamepad_deadzone;
+        ri["raw_input_mode"] = m_config.inputs.raw_input_mode;
+
+        json& s = j["storage"];
+        s["base_output_path"] = m_config.storage.base_output_path;
+        s["video_subfolder"] = m_config.storage.video_subfolder;
+        s["events_filename"] = m_config.storage.events_filename;
+
+        json& sys = j["system"];
+        sys["thread_priority"] = m_config.system.thread_priority;
+        sys["gpu_acceleration"] = m_config.system.gpu_acceleration;
+        sys["internal_buffer_size"] = m_config.system.internal_buffer_size;
+        sys["drop_frames_on_buffer_full"] = m_config.system.drop_frames_on_buffer_full;
+        sys["log_directory"] = m_config.system.log_directory;
+
+        return j.dump(4);
+    }
+
+    bool ConfigSystem::SaveToFile(const std::filesystem::path& path) const {
+        try {
+            std::string content = SaveToString();
+            std::ofstream file(path);
+            if (!file) return false;
+            file << content;
+            return true;
+        } catch (...) {
             return false;
         }
     }

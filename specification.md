@@ -35,7 +35,8 @@ Jeu de Snake basique servant de cible de test pour le moteur.
 
 ### 3.1. Cœur du Moteur (RecordingEngine)
 
-*   **Vidéo (Capture)** : **Windows Desktop Duplication API (DXGI)**. Accès direct au tampon GPU, méthode la plus performante pour les jeux.
+*   **Vidéo (Capture Écran)** : **DXGI Desktop Duplication API (`IDXGIOutputDuplication`)**. Méthode la plus performante, bas-niveau et *zero-copy* pour capturer l'intégralité d'un moniteur. Fonctionne de manière synchrone sans nécessiter de boucle de messages WinRT complexe.
+*   **Vidéo (Capture Fenêtre)** : **Windows Graphics Capture (WGC - WinRT)**. Inspiré de l'approche moderne d'OBS Studio pour capturer des fenêtres individuelles. **Contrainte de conception stricte :** Nécessite son propre thread dédié équipé d'une pompe à messages Win32 (`GetMessage`/`DispatchMessage`) et d'une `DispatcherQueue` correctement initialisée pour garantir le déclenchement des callbacks `FrameArrived`.
 *   **Audio (Capture)** : **WASAPI (Windows Audio Session API)**. Mode *Process-Loopback* (Windows 10 21H1+) pour isoler uniquement le son de l'application cible, ou mode *Global-Loopback* pour tout le système.
 *   **Vidéo/Audio (Encodage)** : **FFmpeg** (libavcodec). Utilisation de `h264_nvenc` pour la vidéo et `aac` pour l'audio, multiplexés dans un conteneur **MKV**.
 *   **Inputs (KB/Mouse)** : **Raw Input (Win32 API)**. Permet la capture globale des entrées même si l'application cible a le focus (contrairement à SDL).
@@ -54,6 +55,12 @@ Jeu de Snake basique servant de cible de test pour le moteur.
     *   `NotoColorEmoji.ttf` (Support des emojis).
     *   Intégration des icônes système Windows.
 *   **Visualisation** : **ImPlot** pour les graphiques de moteurs, les waveforms audio et mouvements souris.
+
+### 3.3. Gestion de la Mémoire et Règles Strictes
+*   **RAII (Resource Acquisition Is Initialization)** : Obligatoire pour la gestion de toutes les ressources. 
+    *   Les interfaces COM Windows (DXGI, WASAPI) utilisent `Microsoft::WRL::ComPtr`.
+    *   Les structures C obsolètes (FFmpeg, SDL) doivent être encapsulées dans des `std::unique_ptr` ou `std::shared_ptr` avec des *Deleters* personnalisés (ex: `av_frame_free`, `sws_freeContext`).
+    *   Aucun `new` / `delete` manuel n'est toléré dans le code métier.
 
 ---
 
@@ -87,7 +94,8 @@ Dossier session unique :
 Utilisation intensive de `std::jthread` et `std::stop_token` :
 
 *   **Thread UI** : Rendu Vulkan / ImGui.
-*   **Thread Capture Vidéo** : Boucle DXGI haute priorité.
+*   **Thread Capture Vidéo (Monitor)** : Boucle DXGI `AcquireNextFrame` haute priorité.
+*   **Thread Capture Vidéo (Window)** : Serveur d'événements WinRT/WGC avec boucle de messages Win32 (`MsgWaitForMultipleObjects`) assurant la réception ininterrompue des `FrameArrived`.
 *   **Thread Capture Audio** : Écoute asynchrone des buffers WASAPI.
 *   **Thread Input** : Pompe à messages Raw Input (Win32), polling SDL et écoute des Hotkeys.
 *   **Thread Encoder** : Queue asynchrone MPMC vers l'encodeur FFmpeg. Intègre une stratégie de **Backpressure** : si la file dépasse la limite (ex: 60 frames), le thread de capture doit "dropper" (jeter) les nouvelles frames vidéo pour éviter la saturation de la RAM, tout en inscrivant un avertissement de "Frame Drop" dans les logs.
@@ -240,10 +248,11 @@ L'Engine expose un portail de prévisualisation via un callback.
     - Console colorée (stdout).
     - Fichier `logs/autogeek_engine.log` (rotation automatique).
 
-### 8.2 Macros de Logging
-- `BB_CORE_INFO(...)`, `BB_CORE_WARN(...)`, `BB_CORE_ERROR(...)`, `BB_CORE_TRACE(...)`.
-- `BB_INFO(...)`, `BB_WARN(...)`, `BB_ERROR(...)` (pour le client).
+### 8.2 Macros de Logging et Interdiction Standard
+- `AGK_CORE_INFO(...)`, `AGK_CORE_WARN(...)`, `AGK_CORE_ERROR(...)`, `AGK_CORE_TRACE(...)`.
+- `AGK_INFO(...)`, `AGK_WARN(...)`, `AGK_ERROR(...)` (pour le client).
 - Utilise `SPDLOG_ACTIVE_LEVEL` pour désactiver les logs coûteux en Release.
+- **Règle Stricte** : L'utilisation de `std::cout`, `std::cerr` ou `printf` est formellement interdite dans l'ensemble de la codebase. Tout affichage terminal doit passer par `agk::Log` pour garantir le typage et l'enregistrement sur disque (`.log`).
 
 ---
 
@@ -303,7 +312,12 @@ classDiagram
 
     %% Acquisition Modules
     class DXGICaptureModule {
+        +InitializeMonitorCapture()
         +StartCaptureLoop(JobSystem)
+    }
+    class WGCCaptureModule {
+        +InitializeWindowCapture()
+        +MessagePumpLoop(JobSystem)
     }
     class AudioWASAPIModule {
         +StartCaptureLoop(JobSystem)
@@ -338,6 +352,7 @@ classDiagram
     RecordingEngineImpl *-- SessionManager
     
     RecordingEngineImpl --> DXGICaptureModule
+    RecordingEngineImpl --> WGCCaptureModule
     RecordingEngineImpl --> AudioWASAPIModule
     RecordingEngineImpl --> RawInputModule
     RecordingEngineImpl --> GamepadModule
@@ -371,7 +386,8 @@ classDiagram
 *   [ ] **`RawInputModule`** : Boucle Win32 (`GetMessage`). Gestion clavier/souris. Injection de la logique de DPI Awareness (`ScreenToClientCoords` via le `TargetTracker`) et de l'état de focus (`target_has_focus`).
 *   [ ] **`GamepadModule`** : Boucle de polling (`SDL_GameController`). Gestion de la *deadzone* configurable et de la fréquence de rafraichissement.
 *   [ ] **`HotkeyModule`** : Enregistrement (`RegisterHotKey`) et écoute des commandes globales (Start, Pause, Marker).
-*   [ ] **`DXGICaptureModule`** : Initialisation DXGI, copie "Zero-Copy" si possible, et push des textures dans `JobSystem`. Application de la backpressure (Drop frame si file pleine).
+*   [ ] **`DXGICaptureModule` (Monitor)** : Initialisation pure DXGI Desktop Duplication API (`IDXGIOutputDuplication`). Capture d'écran asynchrone ultra-performante sans dépendance WinRT. Application de la backpressure (Drop frame si file pleine).
+*   [ ] **`WGCCaptureModule` (Window)** : Initialisation WinRT `Windows.Graphics.Capture`. Lancement sur un thread dédié gérant une boucle Win32 complète (`GetMessage`) et son propre `DispatcherQueue` pour intercepter les callbacks `FrameArrived` (Inspiré OBS Studio).
 *   [ ] **`AudioWASAPIModule`** : Initialisation COM, création des clients WASAPI Loopback (Système) et Capture (Mic), mixage basique et push des buffers PCM.
 *   [ ] **Tests Unitaires** : Mocks d'interruption Win32 pour valider le parsing des Raw Inputs.
 

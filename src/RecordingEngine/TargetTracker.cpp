@@ -5,7 +5,7 @@
 #include "TargetTracker.hpp"
 #include <psapi.h>
 #include <shellscalingapi.h>
-#include "Log.hpp"
+#include <agk/RecordingEngine/Log.hpp>
 
 #pragma comment(lib, "Shcore.lib")
 
@@ -27,19 +27,37 @@ namespace agk {
     }
 
     bool TargetTracker::Update(const std::string& processName, const std::string& windowTitle) {
-        std::lock_guard<std::mutex> lock(m_mutex);
+        if (processName.empty() && windowTitle.empty()) {
+            return false;
+        }
+
         m_searchProcessName = processName;
         m_searchWindowTitle = windowTitle;
         
-        m_info.hwnd = nullptr; // Reset before search
+        TargetInfo result;
+        result.hwnd = nullptr;
+        
         EnumWindows(EnumWindowsProc, reinterpret_cast<LPARAM>(this));
 
-        if (m_info.hwnd) {
-            // Update current state
+        // After EnumWindows, we expect EnumWindowsProc to have populated 'this->m_pendingResult' if found
+        // Let's use a simpler approach: EnumWindowsProc writes to a temporary member.
+        
+        if (m_pendingResult.hwnd) {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_info = m_pendingResult;
+            m_pendingResult.hwnd = nullptr; // Clear for next use
+
+            // Update current state details
             GetClientRect(m_info.hwnd, &m_info.clientRect);
             m_info.width = m_info.clientRect.right - m_info.clientRect.left;
             m_info.height = m_info.clientRect.bottom - m_info.clientRect.top;
             
+            char title[MAX_PATH];
+            GetWindowTextA(m_info.hwnd, title, MAX_PATH);
+
+            AGK_CORE_INFO("[TargetTracker] Match Found! HWND: {:p}, Title: '{}', PID: {}, Rect: {}x{}", 
+                (void*)m_info.hwnd, title, m_info.processId, m_info.width, m_info.height);
+
             HWND foreground = GetForegroundWindow();
             m_info.hasFocus = (foreground == m_info.hwnd);
             m_info.isMinimized = IsIconic(m_info.hwnd);
@@ -47,6 +65,7 @@ namespace agk {
             return true;
         }
 
+        AGK_CORE_WARN("[TargetTracker] No window found matching process='{}' or title='{}'", processName, windowTitle);
         return false;
     }
 
@@ -102,8 +121,8 @@ namespace agk {
                 }
 
                 if (match) {
-                    self->m_info.hwnd = hwnd;
-                    self->m_info.processId = pid;
+                    self->m_pendingResult.hwnd = hwnd;
+                    self->m_pendingResult.processId = pid;
                     CloseHandle(process);
                     return FALSE;
                 }

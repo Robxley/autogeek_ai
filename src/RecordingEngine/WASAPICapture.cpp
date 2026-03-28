@@ -2,7 +2,7 @@
 #include <mmdeviceapi.h>
 #include <audioclient.h>
 #include <iostream>
-#include "Log.hpp"
+#include <agk/RecordingEngine/Log.hpp>
 
 namespace agk {
 
@@ -12,7 +12,13 @@ namespace agk {
         Stop();
         if (m_pwfx) {
             CoTaskMemFree(m_pwfx);
+            m_pwfx = nullptr;
         }
+        if (m_audioEvent) {
+            CloseHandle(m_audioEvent);
+            m_audioEvent = NULL;
+        }
+        CoUninitialize();
     }
 
     bool WASAPICapture::Initialize(const AudioConfig& config, AudioCallback callback, DWORD processId) {
@@ -44,6 +50,16 @@ namespace agk {
         if (FAILED(hr)) {
             AGK_CORE_ERROR("[WASAPI] Failed to activate IAudioClient: 0x{:08X}", (uint32_t)hr);
             return false;
+        }
+
+        if (m_pwfx) {
+            CoTaskMemFree(m_pwfx);
+            m_pwfx = nullptr;
+        }
+
+        if (m_audioEvent) {
+            CloseHandle(m_audioEvent);
+            m_audioEvent = NULL;
         }
 
         hr = m_audioClient->GetMixFormat(&m_pwfx);

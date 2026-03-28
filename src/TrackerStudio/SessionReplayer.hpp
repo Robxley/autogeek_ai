@@ -12,6 +12,8 @@ extern "C" {
 #include <libswscale/swscale.h>
 }
 
+#include <nlohmann/json.hpp>
+
 namespace agk {
 
     class SessionReplayer {
@@ -25,6 +27,7 @@ namespace agk {
         void Update(double deltaTime);
         void RenderUI();
 
+        const std::string& GetCurrentSessionPath() const { return m_currentSessionPath; }
         ImTextureID GetTextureID() const { return (ImTextureID)m_descriptorSet; }
         bool IsLoaded() const { return m_fmtCtx != nullptr; }
 
@@ -34,12 +37,21 @@ namespace agk {
         void DestroyVulkanResources();
         void UpdateVulkanTexture(const uint8_t* data, int linesize);
 
-        // FFmpeg
-        AVFormatContext* m_fmtCtx = nullptr;
-        AVCodecContext* m_codecCtx = nullptr;
-        AVFrame* m_frame = nullptr;
-        AVFrame* m_frameRGBA = nullptr;
-        SwsContext* m_swsCtx = nullptr;
+        std::string m_currentSessionPath;
+
+        // FFmpeg Deleters
+        struct AVFormatContextDeleter { void operator()(AVFormatContext* ctx) const { if(ctx) avformat_close_input(&ctx); } };
+        struct AVCodecContextDeleter { void operator()(AVCodecContext* ctx) const { if(ctx) avcodec_free_context(&ctx); } };
+        struct AVFrameDeleter { void operator()(AVFrame* f) const { if(f) av_frame_free(&f); } };
+        struct SwsContextDeleter { void operator()(SwsContext* ctx) const { if(ctx) sws_freeContext(ctx); } };
+
+        // FFmpeg RAII Containers
+        std::unique_ptr<AVFormatContext, AVFormatContextDeleter> m_fmtCtx;
+        std::unique_ptr<AVCodecContext, AVCodecContextDeleter> m_codecCtx;
+        std::unique_ptr<AVFrame, AVFrameDeleter> m_frame;
+        std::unique_ptr<AVFrame, AVFrameDeleter> m_frameRGBA;
+        std::unique_ptr<SwsContext, SwsContextDeleter> m_swsCtx;
+        
         int m_videoStreamIndex = -1;
 
         // Vulkan
@@ -61,6 +73,22 @@ namespace agk {
         double m_frameDuration = 0.0;
         int m_width = 0;
         int m_height = 0;
+
+        // Events
+        struct SessionEvent {
+            std::string type;     // "mouse_click", "keyboard"
+            uint64_t timestamp;   // microseconds
+            double time_sec;      // normalized to video start
+            int x = 0;            // mouse X
+            int y = 0;            // mouse Y
+            int button = 0;       // Left=1, Right=2
+            int key_code = 0;
+            std::string key_name;
+        };
+        std::vector<SessionEvent> m_events;
+        uint64_t m_sessionStartTime = 0;
+        
+        bool LoadEvents(const std::string& eventsPath);
     };
 
 } // namespace agk

@@ -7,7 +7,7 @@ export module RecordingEngine;
 
 // Import the public header to be able to export it
 export import "agk/RecordingEngine/IRecordingEngine.hpp";
-export import "ConfigSystem.hpp";
+export import <agk/RecordingEngine/ConfigSystem.hpp>;
 export import "SyncSystem.hpp";
 import <memory>;
 

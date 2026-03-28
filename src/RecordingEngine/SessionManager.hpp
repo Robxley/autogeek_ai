@@ -3,7 +3,7 @@
 #include <string>
 #include <filesystem>
 #include <nlohmann/json.hpp>
-#include "ConfigSystem.hpp"
+#include <agk/RecordingEngine/ConfigSystem.hpp>
 
 namespace agk {
 

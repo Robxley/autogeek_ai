@@ -17,6 +17,7 @@ TEST(ConfigSystem, DefaultValues) {
     EXPECT_EQ(c.video.format, "mkv");
     EXPECT_EQ(c.video.target_fps, 60);
     EXPECT_TRUE(c.video.use_source_resolution);
+    EXPECT_FALSE(c.audio.enabled);
 }
 
 TEST(ConfigSystem, LoadJsonString) {

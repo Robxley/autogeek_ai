@@ -1,6 +1,6 @@
 #include "StudioConfig.hpp"
 #include <fstream>
-#include <iostream>
+#include <agk/RecordingEngine/Log.hpp>
 
 namespace agk {
 
@@ -28,7 +28,7 @@ namespace agk {
 
             return true;
         } catch (const std::exception& e) {
-            std::cerr << "[StudioConfig] Error loading: " << e.what() << std::endl;
+            AGK_ERROR("[StudioConfig] Error loading: {}", e.what());
             return false;
         }
     }
@@ -50,7 +50,7 @@ namespace agk {
             file << j.dump(4);
             return true;
         } catch (const std::exception& e) {
-            std::cerr << "[StudioConfig] Error saving: " << e.what() << std::endl;
+            AGK_ERROR("[StudioConfig] Error saving: {}", e.what());
             return false;
         }
     }
