@@ -33,15 +33,15 @@ Outil complet de configuration, de monitoring en temps réel et de relecture syn
 *   **Audio (Capture)** : **WASAPI (Windows Audio Session API)**. Mode *Loopback* pour capturer le son du bureau/jeu, et mode capture standard pour le microphone.
 *   **Vidéo/Audio (Encodage)** : **FFmpeg** (libavcodec). Utilisation prioritaire des encodeurs hardware vidéo (`h264_nvenc`, `h264_amf`) et audio (`aac`).
 *   **Inputs (KB/Mouse)** : **Raw Input (Win32 API)**. Permet la capture globale des entrées même si l'application cible a le focus (contrairement à SDL).
-*   **Inputs (Gamepad)** : **SDL_GameController** (via SDL2). Performant et gère nativement le polling en arrière-plan.
+*   **Inputs (Gamepad)** : **SDL_GameController** (via SDL3). Performant et gère nativement le polling en arrière-plan.
 *   **Contrôle (Hotkeys)** : **`RegisterHotKey` (Win32)** pour l'interception des commandes clavier système.
 *   **Format de Données** : **nlohmann_json**.
 *   **Logging** : **spdlog** (asynchrone).
 
 ### 3.2. Interface Utilisateur (TrackerStudio)
 
-*   **Framework UI** : **HelloImGui** (Base ImGui).
-*   **Backend de Rendu** : **SDL2 + Vulkan**.
+*   **Framework UI** : **Dear ImGui** (avec backend SDL3).
+*   **Backend de Rendu** : **SDL3 + Vulkan**.
 *   **Rendu de Texte & Icones** :
     *   **FreeType** (intégré à ImGui).
     *   `fa-solid-900.ttf` (Font Awesome pour les icônes).
