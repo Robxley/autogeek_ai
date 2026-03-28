@@ -23,6 +23,12 @@ Interface légère en ligne de commande pour lancer des enregistrements via `con
 
 Outil complet de configuration, de monitoring en temps réel et de relecture synchronisée (Timeline vidéo + inputs).
 
+### 2.4. SnakeSimulator (Application de Test - SDL3)
+
+Jeu de Snake basique servant de cible de test pour le moteur.
+*   **Responsabilités** : Fournir une cible visuelle à haut framerate, simuler des entrées clavier/souris programmatiques pour valider la capture des Raw Inputs et la synchronisation temporelle.
+*   **Format** : Application graphique autonome utilisant SDL3.
+
 ---
 
 ## 3. Stack Technique et Bibliothèques
@@ -30,8 +36,8 @@ Outil complet de configuration, de monitoring en temps réel et de relecture syn
 ### 3.1. Cœur du Moteur (RecordingEngine)
 
 *   **Vidéo (Capture)** : **Windows Desktop Duplication API (DXGI)**. Accès direct au tampon GPU, méthode la plus performante pour les jeux.
-*   **Audio (Capture)** : **WASAPI (Windows Audio Session API)**. Mode *Loopback* pour capturer le son du bureau/jeu, et mode capture standard pour le microphone.
-*   **Vidéo/Audio (Encodage)** : **FFmpeg** (libavcodec). Utilisation prioritaire des encodeurs hardware vidéo (`h264_nvenc`, `h264_amf`) et audio (`aac`).
+*   **Audio (Capture)** : **WASAPI (Windows Audio Session API)**. Mode *Process-Loopback* (Windows 10 21H1+) pour isoler uniquement le son de l'application cible, ou mode *Global-Loopback* pour tout le système.
+*   **Vidéo/Audio (Encodage)** : **FFmpeg** (libavcodec). Utilisation de `h264_nvenc` pour la vidéo et `aac` pour l'audio, multiplexés dans un conteneur **MKV**.
 *   **Inputs (KB/Mouse)** : **Raw Input (Win32 API)**. Permet la capture globale des entrées même si l'application cible a le focus (contrairement à SDL).
 *   **Inputs (Gamepad)** : **SDL_GameController** (via SDL3). Performant et gère nativement le polling en arrière-plan.
 *   **Contrôle (Hotkeys)** : **`RegisterHotKey` (Win32)** pour l'interception des commandes clavier système.
@@ -124,6 +130,8 @@ Ce chapitre détaille les paramètres interprétés par le `RecordingEngine`.
       "format": "mkv"
     },
     "audio": {
+      "enabled": true,
+      "is_process_isolated": true,
       "capture_system": true,
       "capture_mic": false,
       "system_device": "default",
@@ -165,7 +173,7 @@ Ce chapitre détaille les paramètres interprétés par le `RecordingEngine`.
 | `hotkeys.start_stop` | Combinaison de touches (Win32) globale permettant de démarrer ou d'arrêter l'enregistrement sans focus sur TrackerStudio. |
 | `hotkeys.add_marker` | Injecte un événement de type `MARKER` dans `events.jsonl` pour retrouver facilement un moment précis (ex: un bug). |
 | `video.target_fps` | Cadence de la boucle de capture DXGI et base de temps pour l'encodage FFmpeg. |
-| `video.encoder` | Sélection de l'ID du codec FFmpeg (ex: `h264_nvenc`). Format cible MKV pour la sécurité. |
+| `video.encoder` | Sélection de l'ID du codec FFmpeg (ex: `h264_nvenc`). Format **MKV par défaut** pour garantir l'intégrité des données en cas de crash. |
 | `audio.capture_system` | Active l'initialisation de WASAPI en mode Loopback pour capturer les sons du bureau/jeu. |
 | `inputs.raw_input_mode` | Active l'usage de `RegisterRawInputDevices` pour intercepter les flux matériels hors-focus. |
 | `inputs.gamepad_polling_rate_ms` | Fréquence de lecture de l'état `SDL_GameController`. |
@@ -184,7 +192,26 @@ Ce chapitre détaille les paramètres interprétés par le `RecordingEngine`.
 
 ---
 
-## 8. Plan de Développement Détaillé
+## 8. Logging & Diagnostics
+
+### 8.1 Infrastructure
+- **Bibliothèque** : `spdlog` (déjà intégrée via FetchContent).
+- **Architecture** : Classe statique `agk::Log` dans le namespace `agk`.
+- **Séparation des flux** :
+    - `CoreLogger` : Pour les messages internes de l'engine (`[CORE]`).
+    - `ClientLogger` : Pour les messages de l'utilisateur/app (`[CLIENT]`).
+- **Sinks** :
+    - Console colorée (stdout).
+    - Fichier `logs/autogeek_engine.log` (rotation automatique).
+
+### 8.2 Macros de Logging
+- `BB_CORE_INFO(...)`, `BB_CORE_WARN(...)`, `BB_CORE_ERROR(...)`, `BB_CORE_TRACE(...)`.
+- `BB_INFO(...)`, `BB_WARN(...)`, `BB_ERROR(...)` (pour le client).
+- Utilise `SPDLOG_ACTIVE_LEVEL` pour désactiver les logs coûteux en Release.
+
+---
+
+## 9. Plan de Développement Détaillé
 
 Ce plan structuré par phases servira de feuille de route pour l'implémentation. Il inclut l'architecture conceptuelle des classes du `RecordingEngine`.
 
@@ -286,20 +313,22 @@ classDiagram
 
 ### Phase 1 : Infrastructure & CMake
 
-*   [ ] **Configuration du fichier `CMakeLists.txt` racine** (activation C++20, Modules).
-*   [ ] **Intégration des dépendances** (via `FetchContent` ou `vcpkg` : spdlog, nlohmann_json, FFmpeg, SDL2, Vulkan, HelloImGui, ImPlot).
-*   [ ] **Création et configuration de la cible `RecordingEngine`** (Static Lib / Module).
-*   [ ] **Création de la cible `TrackerCLI`** (Executable).
-*   [ ] **Création de la cible `TrackerStudio`** (Executable).
-*   [ ] **Intégration du framework de test unitaire** (GoogleTest ou Catch2).
+*   [x] **Configuration du fichier `CMakeLists.txt` racine** (activation C++20, Modules).
+*   [x] **Intégration des dépendances** (via `FetchContent` ou `vcpkg` : spdlog, nlohmann_json, FFmpeg, SDL3, Vulkan, Dear ImGui, ImPlot).
+*   [x] **Création et configuration de la cible `RecordingEngine`** (Static Lib / Module).
+*   [x] **Création de la cible `TrackerCLI`** (Executable).
+*   [x] **Création de la cible `TrackerStudio`** (Executable).
+*   [x] **Intégration du framework de test unitaire** (GoogleTest ou Catch2).
 
 ### Phase 2 : Architecture Core (`RecordingEngine` - Socle)
 
-*   [ ] **`ConfigSystem`** : Parsing de `recording_config.json`, validation des types et exposition sécurisée (struct).
-*   [ ] **`JobSystem`** : Création du gestionnaire de threads (`std::jthread`). Implémentation des files lock-free MPMC (Multi-Producer Multi-Consumer) pour les Data Transfer Objects : `VideoFrameDTO`, `AudioBufferDTO`, `InputEventDTO`.
-*   [ ] **`SyncSystem`** : Encapsulation de `std::chrono::steady_clock`. Calcul dynamique du `frame_index`. Implémentation de la compensation temporelle lors des pauses (`HandlePauseOffset`).
-*   [ ] **`TargetTracker`** : Logique de détection de processus (PID), de Handles de fenêtres (HWND). Gestion de l'état (Minimize/Restore/Close) pour piloter l'Auto-Pause/Resume.
-*   [ ] **Tests Unitaires** : Mock du `ConfigSystem` et stress-test des files lock-free du `JobSystem`.
+*   [x] **`ConfigSystem`** : Parsing de `recording_config.json`, validation des types et exposition sécurisée (struct).
+*   [x] **`JobSystem`** : Création du gestionnaire de threads (`std::jthread`). Implémentation des files lock-free MPMC (Multi-Producer Multi-Consumer) pour les Data Transfer Objects : `VideoFrameDTO`, `AudioBufferDTO`, `InputEventDTO`.
+*   [x] **`SyncSystem`** : Encapsulation de `std::chrono::steady_clock`. Calcul dynamique du `frame_index`. Implémentation de la compensation temporelle lors des pauses (`HandlePauseOffset`).
+*   [x] **`TargetTracker`** : Logique de détection de processus (PID), de Handles de fenêtres (HWND). Gestion de l'état (Minimize/Restore/Close) pour piloter l'Auto-Pause/Resume.
+*   [x] **`SessionManager`** : Génération de l'arborescence `/session_YYYYMMDD_HHMMSS/`, copie de la configuration et écriture de `session_info.json`.
+*   [x] **Tests Unitaires** : Mock du `ConfigSystem` et stress-test des files lock-free du `JobSystem`.
+*   [x] **Compilation et Exécution des Tests** : Le projet doit être compilé et les tests unitaires doivent être exécutés pour vérifier le bon fonctionnement des systèmes core.
 
 ### Phase 3 : Modules d'Acquisition (Inputs, Vidéo & Audio)
 
@@ -324,6 +353,7 @@ classDiagram
 *   [ ] **TrackerStudio (Dashboard)** : Création des fenêtres ImGui : Statuts matériels, Vu-mètres audio en temps réel, statistiques d'encodage (FPS in/out, frame drops), contrôles (REC/PAUSE/STOP).
 *   [ ] **TrackerStudio (Replayer Core)** : Intégration d'un mini-décodeur FFmpeg pour extraire les frames du `.mkv` et les charger en tant que `ImTextureID` Vulkan.
 *   [ ] **TrackerStudio (Timeline)** : Intégration d'`ImPlot`. Affichage horizontal de la vidéo synchronisée avec les lignes d'événements (Clics, Touches, PAD, Marqueurs). Outils de zoom et seek temporel interactif.
+*   [ ] **SnakeSimulator** : Développement du moteur de jeu SDL3 (Grille, Snake, Food). Ajout d'un mode "Debug Autoplay" pour simuler des séquences d'entrées clavier/souris.
 
 ### Phase 6 : Polissage, Profiling et Validation E2E
 

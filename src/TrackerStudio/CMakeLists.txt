@@ -1,14 +1,19 @@
-# CMakeLists.txt for TrackerStudio
+# src/TrackerStudio/CMakeLists.txt
 
-# Add the TrackerStudio executable
-add_executable(TrackerStudio
-    ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
+add_executable(TrackerStudio main.cpp)
+
+# Liens avec le module RecordingEngine et les dépendances GUI
+target_link_libraries(TrackerStudio
+    PRIVATE
+        RecordingEngine
+        imgui::imgui
+        implot::implot
+        SDL3::SDL3
+        Vulkan::Vulkan
 )
 
-# Include directories
-target_include_directories(TrackerStudio PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../RecordingEngine/include
-)
+# Activer les modules C++20 pour la cible
+target_compile_features(TrackerStudio PRIVATE cxx_std_20)
 
-# Link libraries
-target_link_libraries(TrackerStudio PRIVATE RecordingEngine imgui implot sdl3 Vulkan::Vulkan)
+# Copie des DLLs
+agk_copy_dlls(TrackerStudio)

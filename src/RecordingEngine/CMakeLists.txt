@@ -1,19 +1,55 @@
-# CMakeLists.txt for RecordingEngine
+# src/RecordingEngine/CMakeLists.txt
 
-# Add the RecordingEngine library
-add_library(RecordingEngine STATIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/RecordingEngine.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include/RecordingEngine/RecordingEngine.ixx
+# Configurer la bibliothèque de modules
+add_library(RecordingEngine STATIC)
+
+# Ajouter les fichiers sources du module
+target_sources(RecordingEngine
+    PUBLIC
+        FILE_SET CXX_MODULES FILES
+            RecordingEngine.ixx
+    PRIVATE
+        RecordingEngineImpl.cpp
+        ConfigSystem.cpp
+        Log.cpp
+        DXGICapture.cpp
+        EncoderModule.cpp
+        RawInputModule.cpp
+        EventSerializer.cpp
+        TargetTracker.cpp
+        SessionManager.cpp
+        WASAPICapture.cpp
 )
 
-# Include directories
-target_include_directories(RecordingEngine PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+# Liens avec les bibliothèques système Windows pour DXGI
+if(WIN32)
+    target_link_libraries(RecordingEngine PRIVATE d3d11 dxgi ole32)
+endif()
+
+
+# Configurer les dossiers d'include
+target_include_directories(RecordingEngine
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-# Link libraries
-target_link_libraries(RecordingEngine PRIVATE spdlog nlohmann_json)
+# Lier les dépendances (spdlog, nlohmann_json, Vulkan si besoin plus tard)
+target_link_libraries(RecordingEngine
+    PUBLIC
+        spdlog::spdlog
+        nlohmann_json::nlohmann_json
+        FFmpeg::avformat
+        FFmpeg::avcodec
+        FFmpeg::avutil
+        FFmpeg::swscale
+        FFmpeg::swresample
+)
 
-# Enable C++20 modules
-set_target_properties(RecordingEngine PROPERTIES CXX_MODULES ON)
+# Définition pour le debug
+target_compile_definitions(RecordingEngine
+    PRIVATE
+        $<$<CONFIG:Debug>:agk_DEBUG=1>
+)

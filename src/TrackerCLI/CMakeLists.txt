@@ -1,14 +1,15 @@
-# CMakeLists.txt for TrackerCLI
+# src/TrackerCLI/CMakeLists.txt
 
-# Add the TrackerCLI executable
-add_executable(TrackerCLI
-    ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
+add_executable(TrackerCLI main.cpp)
+
+# Liens avec le module RecordingEngine
+target_link_libraries(TrackerCLI
+    PRIVATE
+        RecordingEngine
 )
 
-# Include directories
-target_include_directories(TrackerCLI PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../RecordingEngine/include
-)
+# Activer les modules C++20 pour la cible
+target_compile_features(TrackerCLI PRIVATE cxx_std_20)
 
-# Link libraries
-target_link_libraries(TrackerCLI PRIVATE RecordingEngine)
+# Copie des DLLs
+agk_copy_dlls(TrackerCLI)

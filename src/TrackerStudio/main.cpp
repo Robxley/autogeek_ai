@@ -1,16 +1,19 @@
-// main.cpp for TrackerStudio
-#include <iostream>
-#include <string>
+/**
+ * @file main.cpp
+ * @brief GUI interface for TrackerStudio using ImGui, SDL3, and Vulkan.
+ */
 
-// Import the RecordingEngine module
 import RecordingEngine;
+import <iostream>;
 
-int main(int argc, char* argv[]) {
-    std::cout << "TrackerStudio - Starting..." << std::endl;
+int main() {
+    std::cout << "--- TrackerStudio Starting ---" << std::endl;
+
+    // Placeholder for ImGui + SDL3 + Vulkan initialization
+    // Will be implemented in Phase 5.
     
-    // Test the RecordingEngine module
-    TestRecordingEngine();
-    
-    std::cout << "TrackerStudio - Exiting..." << std::endl;
+    agk::TestRecordingEngine();
+
+    std::cout << "--- TrackerStudio Exiting ---" << std::endl;
     return 0;
 }

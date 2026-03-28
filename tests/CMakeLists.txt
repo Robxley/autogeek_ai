@@ -1,28 +1,7 @@
-# CMakeLists.txt for tests
+# tests/CMakeLists.txt
 
-# Enable testing
-enable_testing()
+# Inclure GoogleTest (déjà disponible via FetchContent_MakeAvailable dans Dependencies.cmake)
+include(GoogleTest)
 
-# Add GoogleTest
-FetchContent_Declare(
-    googletest
-    GIT_REPOSITORY https://github.com/google/googletest.git
-    GIT_TAG release-1.12.1
-)
-FetchContent_MakeAvailable(googletest)
-
-# Add a simple test executable
-add_executable(TestRecordingEngine
-    ${CMAKE_CURRENT_SOURCE_DIR}/TestRecordingEngine.cpp
-)
-
-# Include directories
-target_include_directories(TestRecordingEngine PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/RecordingEngine/include
-)
-
-# Link libraries
-target_link_libraries(TestRecordingEngine PRIVATE RecordingEngine gtest gtest_main)
-
-# Add the test to CTest
-add_test(NAME TestRecordingEngine COMMAND TestRecordingEngine)
+# Ajouter les sous-dossiers de tests
+add_subdirectory(RecordingEngine)
