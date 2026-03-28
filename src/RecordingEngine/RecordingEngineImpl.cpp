@@ -14,6 +14,9 @@ module;
 #include "TargetTracker.hpp"
 #include "SessionManager.hpp"
 #include "WASAPICapture.hpp"
+extern "C" {
+#include <libswscale/swscale.h>
+}
 #include <thread>
 #include <atomic>
 #include <filesystem>
@@ -138,6 +141,13 @@ namespace agk {
             AGK_CORE_INFO("[Engine] Recording resumed.");
         }
 
+        void SetPreviewCallback(PreviewCallback callback, int width, int height) override {
+            m_previewCallback = callback;
+            m_previewWidth = width;
+            m_previewHeight = height;
+            AGK_CORE_INFO("[Engine] Preview callback set ({}x{}).", width, height);
+        }
+
     private:
         void RecordingLoop() {
             AGK_CORE_INFO("[Engine] Entering recording loop...");
@@ -165,6 +175,11 @@ namespace agk {
                     
                     // Encode Frame
                     m_encoder.EncodeVideoFrame(frame->data, frame->linesize, frameIndex++);
+
+                    // Preview Support (Live Monitoring)
+                    if (m_previewCallback) {
+                        UpdatePreview(frame.get(), frameIndex);
+                    }
                 }
 
                 // Wait for next frame (poor man's sync for now)
@@ -178,6 +193,36 @@ namespace agk {
             }
 
             AGK_CORE_INFO("[Engine] Exiting recording loop.");
+            if (m_swsPreviewCtx) {
+                sws_freeContext(m_swsPreviewCtx);
+                m_swsPreviewCtx = nullptr;
+            }
+        }
+
+        void UpdatePreview(const CaptureFrame* decodedFrame, int64_t frameIndex) {
+            if (!m_swsPreviewCtx || m_lastPreviewWidth != m_previewWidth || m_lastPreviewHeight != m_previewHeight) {
+                if (m_swsPreviewCtx) sws_freeContext(m_swsPreviewCtx);
+                m_swsPreviewCtx = sws_getContext(decodedFrame->width, decodedFrame->height, AV_PIX_FMT_BGRA,
+                                                m_previewWidth, m_previewHeight, AV_PIX_FMT_BGRA,
+                                                SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
+                m_lastPreviewWidth = m_previewWidth;
+                m_lastPreviewHeight = m_previewHeight;
+                m_previewBuffer.resize(m_previewWidth * m_previewHeight * 4);
+            }
+
+            uint8_t* dest[1] = {m_previewBuffer.data()};
+            int destLinesize[1] = {m_previewWidth * 4};
+
+            sws_scale(m_swsPreviewCtx, &decodedFrame->data, &decodedFrame->linesize, 0, decodedFrame->height, dest, destLinesize);
+
+            PreviewFrame preview;
+            preview.data = m_previewBuffer.data();
+            preview.width = m_previewWidth;
+            preview.height = m_previewHeight;
+            preview.linesize = m_previewWidth * 4;
+            preview.timestamp = m_sync.GetRelativeTimeMs();
+            
+            m_previewCallback(preview);
         }
 
         std::unique_ptr<Config> m_config;
@@ -194,6 +239,15 @@ namespace agk {
         std::atomic<bool> m_isPaused;
         std::atomic<int64_t> m_currentFrameIndex;
         std::thread m_recordingThread;
+
+        // Preview
+        PreviewCallback m_previewCallback;
+        int m_previewWidth = 640;
+        int m_previewHeight = 360;
+        int m_lastPreviewWidth = 0;
+        int m_lastPreviewHeight = 0;
+        SwsContext* m_swsPreviewCtx = nullptr;
+        std::vector<uint8_t> m_previewBuffer;
     };
 
     /**

@@ -1,6 +1,11 @@
 # src/TrackerStudio/CMakeLists.txt
 
-add_executable(TrackerStudio main.cpp)
+add_executable(TrackerStudio 
+    main.cpp
+    StudioConfig.cpp
+    LiveMonitor.cpp
+    SessionReplayer.cpp
+)
 
 # Liens avec le module RecordingEngine et les dépendances GUI
 target_link_libraries(TrackerStudio

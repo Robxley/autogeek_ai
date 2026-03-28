@@ -94,11 +94,11 @@ Utilisation intensive de `std::jthread` et `std::stop_token` :
 
 ---
 
-## 6. Schéma de Configuration (recording_config.json)
+## 6. Schémas de Configuration (recording_config.json & tracker_config.json)
 
-Ce chapitre détaille les paramètres interprétés par le `RecordingEngine`.
+Ce chapitre détaille les paramètres interprétés par le `RecordingEngine` et le `TrackerStudio`.
 
-### 6.1. Structure du fichier JSON
+### 6.1. Structure de recording_config.json (Engine)
 
 ```json
 {
@@ -179,11 +179,47 @@ Ce chapitre détaille les paramètres interprétés par le `RecordingEngine`.
 | `inputs.gamepad_polling_rate_ms` | Fréquence de lecture de l'état `SDL_GameController`. |
 | `storage.events_filename` | Utilisation du format JSONL (JSON Lines) pour éviter la perte de données en cas de crash. |
 | `system.internal_buffer_size` | Nombre de frames maximales stockées en RAM dans la file de production avant encodage. |
-| `system.drop_frames_on_buffer_full` | Si l'encodeur est surchargé, ignore les nouvelles frames capturées pour prévenir l'épuisement de la RAM (Backpressure). |
+### 6.3. Structure de tracker_config.json (Studio)
+
+Ce fichier est spécifique à l'application `TrackerStudio` pour son interface et ses fonctions de monitoring.
+
+```json
+{
+  "window": {
+    "width": 1280,
+    "height": 720,
+    "vsync": true
+  },
+  "preview": {
+    "width": 640,
+    "height": 360,
+    "fps_limit": 30
+  },
+  "history": {
+    "last_session_path": "./recordings"
+  }
+}
+```
+
+| Paramètre | Rôle pour TrackerStudio |
+| :--- | :--- |
+| `window.vsync` | Active la synchronisation verticale pour le rendu ImGui. |
+| `preview.width / height` | Résolution utilisée pour l'affichage en direct (Live Monitoring). |
+| `preview.fps_limit` | Limite la cadence de rafraichissement du preview pour économiser le GPU. |
 
 ---
 
-## 7. Contraintes de Build et d'Exécution
+## 7. Tracker Studio : Replay et Live Monitoring
+
+### 7.1. Replayer (Relecture Synchronisée)
+Le module `SessionReplayer` utilise FFmpeg pour décoder le `video.mkv` et parser le `events.jsonl`.
+- **Display Overlays** : Affiche les clics et les touches enfoncées en superposition (overlay) sur la vidéo.
+- **DPI Compensation** : Utilise les métadonnées de `session_info.json` pour replacer les coordonnées normalisées (0.0-1.0) sur la vidéo.
+
+### 7.2. Live Monitoring (Aperçu en direct)
+L'Engine expose un portail de prévisualisation via un callback.
+- **Principe** : Le Studio s'enregistre auprès de l'Engine avec une définition cible (ex: 480p). 
+- **Performance** : La conversion de format (RGBA) et le downscaling sont effectués dans le thread de capture uniquement si le Studio est actif.
 
 *   **Compilateur** : MSVC 2022 (v143) ou Clang 16+.
 *   **Build System** : CMake 3.28+.

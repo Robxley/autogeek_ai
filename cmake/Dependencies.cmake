@@ -29,18 +29,18 @@ FetchContent_Declare(
     GIT_TAG v1.14.0
 )
 
-# --- Dear ImGui (Files only) ---
+# --- Dear ImGui (Docking branch) ---
 FetchContent_Declare(
     imgui
     GIT_REPOSITORY https://github.com/ocornut/imgui.git
-    GIT_TAG v1.91.5
+    GIT_TAG docking
 )
 
-# --- ImPlot (Files only) ---
+# --- ImPlot (Latest) ---
 FetchContent_Declare(
     implot
     GIT_REPOSITORY https://github.com/epezent/implot.git
-    GIT_TAG v0.16
+    GIT_TAG master
 )
 
 # Rendre les dépendances CMake-natives disponibles
