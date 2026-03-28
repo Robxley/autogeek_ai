@@ -19,9 +19,9 @@ namespace agk {
     };
 
     struct AudioConfig {
-        bool enabled = true;
+        bool enabled = false;
         bool is_process_isolated = true;
-        bool capture_system = true;
+        bool capture_system = false;
         bool capture_mic = false;
         std::string system_device = "default";
         std::string mic_device = "default";

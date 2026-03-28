@@ -136,6 +136,8 @@ namespace agk {
         av_channel_layout_copy(&m_aFrame->ch_layout, &m_aCodecCtx->ch_layout);
         m_aFrame->sample_rate = m_aCodecCtx->sample_rate;
 
+        m_audioFifo = av_audio_fifo_alloc(m_aCodecCtx->sample_fmt, m_aCodecCtx->ch_layout.nb_channels, 1);
+
         return true;
     }
 
@@ -227,18 +229,36 @@ namespace agk {
         }
 
         swr_convert(m_swrCtx, m_aFrame->data, m_aFrame->nb_samples, (const uint8_t**)m_aInputFrame->data, m_aInputFrame->nb_samples);
-        m_aFrame->pts = m_audioPts;
-        m_audioPts += m_aFrame->nb_samples;
 
-        if (avcodec_send_frame(m_aCodecCtx, m_aFrame) == 0) {
-            AVPacket* pkt = av_packet_alloc();
-            while (avcodec_receive_packet(m_aCodecCtx, pkt) == 0) {
-                av_packet_rescale_ts(pkt, m_aCodecCtx->time_base, m_aStream->time_base);
-                pkt->stream_index = m_aStream->index;
-                av_interleaved_write_frame(m_fmtCtx, pkt);
-                av_packet_unref(pkt);
+        av_audio_fifo_realloc(m_audioFifo, av_audio_fifo_size(m_audioFifo) + m_aFrame->nb_samples);
+        av_audio_fifo_write(m_audioFifo, (void**)m_aFrame->data, m_aFrame->nb_samples);
+
+        int targetFrameSize = m_aCodecCtx->frame_size > 0 ? m_aCodecCtx->frame_size : 1024;
+
+        while (av_audio_fifo_size(m_audioFifo) >= targetFrameSize) {
+            AVFrame* encFrame = av_frame_alloc();
+            encFrame->nb_samples = targetFrameSize;
+            encFrame->format = m_aCodecCtx->sample_fmt;
+            av_channel_layout_copy(&encFrame->ch_layout, &m_aCodecCtx->ch_layout);
+            encFrame->sample_rate = m_aCodecCtx->sample_rate;
+            av_frame_get_buffer(encFrame, 0);
+
+            av_audio_fifo_read(m_audioFifo, (void**)encFrame->data, targetFrameSize);
+            
+            encFrame->pts = m_audioPts;
+            m_audioPts += encFrame->nb_samples;
+
+            if (avcodec_send_frame(m_aCodecCtx, encFrame) == 0) {
+                AVPacket* pkt = av_packet_alloc();
+                while (avcodec_receive_packet(m_aCodecCtx, pkt) == 0) {
+                    av_packet_rescale_ts(pkt, m_aCodecCtx->time_base, m_aStream->time_base);
+                    pkt->stream_index = m_aStream->index;
+                    av_interleaved_write_frame(m_fmtCtx, pkt);
+                    av_packet_unref(pkt);
+                }
+                av_packet_free(&pkt);
             }
-            av_packet_free(&pkt);
+            av_frame_free(&encFrame);
         }
         return true;
     }
@@ -277,6 +297,10 @@ namespace agk {
         if (m_vFrame) av_frame_free(&m_vFrame);
         if (m_aFrame) av_frame_free(&m_aFrame);
         if (m_aInputFrame) av_frame_free(&m_aInputFrame);
+        if (m_audioFifo) {
+            av_audio_fifo_free(m_audioFifo);
+            m_audioFifo = nullptr;
+        }
         if (m_vCodecCtx) avcodec_free_context(&m_vCodecCtx);
         if (m_aCodecCtx) avcodec_free_context(&m_aCodecCtx);
         if (m_fmtCtx) {

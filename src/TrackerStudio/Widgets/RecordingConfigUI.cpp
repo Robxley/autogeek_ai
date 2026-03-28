@@ -1,6 +1,8 @@
 #include "RecordingConfigUI.hpp"
 #include "imgui.h"
 #include <string>
+#include "portable-file-dialogs.h"
+#include "../IconsFontAwesome6.h"
 
 namespace agk {
 namespace Widgets {
@@ -23,10 +25,11 @@ namespace Widgets {
             firstRun = false;
         }
 
-        ImGui::Begin("Recording Configuration");
-
-        ImGui::Text("Target Selection");
+        ImGui::Text(ICON_FA_WRENCH " Recording Settings");
         ImGui::Separator();
+        ImGui::Spacing();
+        
+        ImGui::Text(ICON_FA_CROSSHAIRS " Target Selection");
         
         const char* modes[] = { "monitor_crop", "monitor", "window" };
         int current_mode = 0;
@@ -42,21 +45,25 @@ namespace Widgets {
             engine->SetTargetProcess(processBuffer);
         }
 
-        ImGui::Spacing();
-        ImGui::Text("Configuration Management");
+        ImGui::Spacing(); ImGui::Spacing();
+        ImGui::Text(ICON_FA_FLOPPY_DISK " Configuration Management");
         ImGui::Separator();
+        ImGui::Spacing();
 
-        if (ImGui::Button("Save Config")) {
-            engine->SaveConfig("recording_config.json");
+        if (ImGui::Button(ICON_FA_DOWNLOAD " Save Config", ImVec2(120, 0))) {
+            auto dest = pfd::save_file("Save Engine Config", "recording_config.json", {"JSON Files", "*.json", "All Files", "*"}).result();
+            if (!dest.empty()) {
+                engine->SaveConfig(dest);
+            }
         }
         ImGui::SameLine();
-        if (ImGui::Button("Load Config")) {
-            engine->LoadConfig("recording_config.json");
-            // Refresh buffer
-            strncpy(processBuffer, engine->GetConfig().target.process_name.c_str(), sizeof(processBuffer) - 1);
+        if (ImGui::Button(ICON_FA_UPLOAD " Load Config", ImVec2(120, 0))) {
+            auto src = pfd::open_file("Load Engine Config", "", {"JSON Files", "*.json", "All Files", "*"}).result();
+            if (!src.empty()) {
+                engine->LoadConfig(src[0]);
+                strncpy(processBuffer, engine->GetConfig().target.process_name.c_str(), sizeof(processBuffer) - 1);
+            }
         }
-
-        ImGui::End();
     }
 
 }

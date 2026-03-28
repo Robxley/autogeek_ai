@@ -13,6 +13,7 @@ namespace Widgets {
         if (ImGui::Button(ICON_FA_FOLDER_OPEN " Set Root Folder")) {
             std::string new_path = pfd::select_folder("Choose Recordings Folder", config.last_session_path).result();
             if (!new_path.empty()) {
+                AGK_CORE_INFO("[SessionExplorer] User changed root folder to: {}", new_path);
                 config.last_session_path = new_path;
                 config.Save("tracker_config.json");
             }
@@ -56,9 +57,9 @@ namespace Widgets {
 
                 ImGui::TreeNodeEx((void*)path.c_str(), flags, "%s %s", ICON_FA_FOLDER, folderName.c_str());
                 if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+                    AGK_CORE_INFO("[SessionExplorer] User requested to load session: {}", folderName);
                     // Update replayer on click
                     replayer->OpenSession(path.string());
-                    AGK_INFO("Loaded session: {}", folderName);
                 }
             }
         } catch (const std::exception& e) {

@@ -1,0 +1,54 @@
+{
+    "recording": {
+        "audio": {
+            "audio_bitrate_kbps": 192,
+            "capture_mic": false,
+            "capture_system": false,
+            "enabled": false,
+            "is_process_isolated": true,
+            "mic_device": "default",
+            "system_device": "default"
+        },
+        "inputs": {
+            "capture_gamepad": true,
+            "capture_keyboard": true,
+            "capture_mouse": true,
+            "enabled": true,
+            "gamepad_deadzone": 0.10000000149011612,
+            "gamepad_polling_rate_ms": 8,
+            "mouse_sampling_rate_ms": 10,
+            "raw_input_mode": true
+        },
+        "video": {
+            "bitrate_kbps": 8000,
+            "encoder": "h264_nvenc",
+            "format": "mkv",
+            "height": 1080,
+            "target_fps": 60,
+            "use_source_resolution": true,
+            "width": 1920
+        }
+    },
+    "storage": {
+        "base_output_path": "./recordings",
+        "events_filename": "events.jsonl",
+        "video_subfolder": "video"
+    },
+    "system": {
+        "drop_frames_on_buffer_full": true,
+        "gpu_acceleration": true,
+        "internal_buffer_size": 60,
+        "log_directory": "logs",
+        "thread_priority": "high"
+    },
+    "target": {
+        "auto_pause_on_minimize": true,
+        "auto_resume_on_restore": true,
+        "include_cursor": true,
+        "mode": "monitor_crop",
+        "monitor_index": 0,
+        "process_name": "",
+        "wait_for_target": true,
+        "window_title": ""
+    }
+}

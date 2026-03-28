@@ -19,6 +19,7 @@ struct AVFrame;
 struct AVPacket;
 struct SwsContext;
 struct SwrContext;
+struct AVAudioFifo;
 
 namespace agk {
 
@@ -87,6 +88,8 @@ namespace agk {
         int m_lastSrcH = 0;
         bool m_isInitialized = false;
         bool m_hasAudio = false;
+        
+        AVAudioFifo* m_audioFifo = nullptr;
     };
 
 } // namespace agk

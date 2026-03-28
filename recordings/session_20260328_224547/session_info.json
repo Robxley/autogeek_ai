@@ -1,0 +1,15 @@
+{
+    "session_id": "session_20260328_224547",
+    "start_time": 1774734347,
+    "target": {
+        "mode": "monitor_crop",
+        "process": "",
+        "window": ""
+    },
+    "video": {
+        "encoder": "h264_nvenc",
+        "fps": 60,
+        "height": 1080,
+        "width": 1920
+    }
+}

@@ -73,6 +73,9 @@ namespace agk {
     }
 
     void SessionReplayer::Close() {
+        if (m_device) {
+            vkDeviceWaitIdle(m_device);
+        }
         DestroyVulkanResources();
         m_swsCtx.reset();
         m_frame.reset();
@@ -128,9 +131,11 @@ namespace agk {
 
         if (ImGui::Button(m_isPlaying ? "Pause" : "Play")) {
             m_isPlaying = !m_isPlaying;
+            AGK_CORE_INFO("[Replayer] User clicked {}", m_isPlaying ? "PLAY" : "PAUSE");
         }
         ImGui::SameLine();
         if (ImGui::Button("Stop")) {
+            AGK_CORE_INFO("[Replayer] User clicked STOP (Rewinding to 0.0s)");
             m_isPlaying = false;
             av_seek_frame(m_fmtCtx.get(), m_videoStreamIndex, 0, AVSEEK_FLAG_BACKWARD);
             m_currentTime = 0.0;
@@ -378,10 +383,10 @@ namespace agk {
             ImGui_ImplVulkan_RemoveTexture(m_descriptorSet);
             m_descriptorSet = VK_NULL_HANDLE;
         }
-        if (m_sampler) vkDestroySampler(m_device, m_sampler, nullptr);
-        if (m_imageView) vkDestroyImageView(m_device, m_imageView, nullptr);
-        if (m_image) vkDestroyImage(m_device, m_image, nullptr);
-        if (m_memory) vkFreeMemory(m_device, m_memory, nullptr);
+        if (m_sampler) { vkDestroySampler(m_device, m_sampler, nullptr); m_sampler = VK_NULL_HANDLE; }
+        if (m_imageView) { vkDestroyImageView(m_device, m_imageView, nullptr); m_imageView = VK_NULL_HANDLE; }
+        if (m_image) { vkDestroyImage(m_device, m_image, nullptr); m_image = VK_NULL_HANDLE; }
+        if (m_memory) { vkFreeMemory(m_device, m_memory, nullptr); m_memory = VK_NULL_HANDLE; }
     }
 
 } // namespace agk

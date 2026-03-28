@@ -33,6 +33,7 @@ namespace agk {
         void FramePresent();
         void SetupDockspace();
         void SetupFontAwesome();
+        void SetupImGuiStyle();
 
         // SDL & Vulkan Core
         SDL_Window* m_window = nullptr;
