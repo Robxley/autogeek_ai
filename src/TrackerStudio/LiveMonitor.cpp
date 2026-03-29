@@ -62,13 +62,29 @@ namespace agk {
                 ys_keyboard.push_back(tf.keyboard);
             }
 
-            if (!xs.empty()) { ImPlot::PlotLine("FPS Status", xs.data(), ys_fps.data(), xs.size()); }
+            if (!xs.empty()) { 
+                ImVec4 color = ImVec4(0.0f, 0.6f, 1.0f, 1.0f);
+                ImPlot::PlotShaded("FPS Status", xs.data(), ys_fps.data(), (int)xs.size(), 0.0, {ImPlotProp_FillColor, color, ImPlotProp_FillAlpha, 0.20f});
+                ImPlot::PlotLine("##FPSLine", xs.data(), ys_fps.data(), (int)xs.size(), {ImPlotProp_LineColor, color, ImPlotProp_LineWeight, 1.5f});
+            }
             
-            if (!xs.empty()) { ImPlot::PlotLine("Audio Signal", xs.data(), ys_audio.data(), xs.size()); }
+            if (!xs.empty()) { 
+                ImVec4 color = ImVec4(0.2f, 0.9f, 0.4f, 1.0f);
+                ImPlot::PlotShaded("Audio Signal", xs.data(), ys_audio.data(), (int)xs.size(), 0.0, {ImPlotProp_FillColor, color, ImPlotProp_FillAlpha, 0.20f});
+                ImPlot::PlotLine("##AudioLine", xs.data(), ys_audio.data(), (int)xs.size(), {ImPlotProp_LineColor, color, ImPlotProp_LineWeight, 1.5f});
+            }
 
-            if (!xs.empty()) { ImPlot::PlotLine("Mouse Tracking", xs.data(), ys_mouse.data(), xs.size()); }
+            if (!xs.empty()) { 
+                ImVec4 color = ImVec4(1.0f, 0.5f, 0.0f, 1.0f);
+                ImPlot::PlotShaded("Mouse Tracking", xs.data(), ys_mouse.data(), (int)xs.size(), 0.0, {ImPlotProp_FillColor, color, ImPlotProp_FillAlpha, 0.20f});
+                ImPlot::PlotLine("##MouseLine", xs.data(), ys_mouse.data(), (int)xs.size(), {ImPlotProp_LineColor, color, ImPlotProp_LineWeight, 1.5f});
+            }
 
-            if (!xs.empty()) { ImPlot::PlotLine("Keyboard Strokes", xs.data(), ys_keyboard.data(), xs.size()); }
+            if (!xs.empty()) { 
+                ImVec4 color = ImVec4(0.8f, 0.3f, 1.0f, 1.0f);
+                ImPlot::PlotShaded("Keyboard Strokes", xs.data(), ys_keyboard.data(), (int)xs.size(), 0.0, {ImPlotProp_FillColor, color, ImPlotProp_FillAlpha, 0.20f});
+                ImPlot::PlotLine("##KybdLine", xs.data(), ys_keyboard.data(), (int)xs.size(), {ImPlotProp_LineColor, color, ImPlotProp_LineWeight, 1.5f});
+            }
 
             ImPlot::EndPlot();
         }

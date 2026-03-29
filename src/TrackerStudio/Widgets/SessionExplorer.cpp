@@ -256,6 +256,11 @@ namespace Widgets {
                     }
                 } else {
                     thumbTex = it->second;
+                    // Retry loading if we cached a nullptr previously but the file now exists
+                    if (!thumbTex && std::filesystem::exists(thumbPath)) {
+                        thumbTex = LoadThumbnail(thumbPath);
+                        m_thumbnailCache[thumbPath] = thumbTex;
+                    }
                 }
 
                 if (thumbTex && thumbTex->descriptor) {

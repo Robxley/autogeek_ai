@@ -264,6 +264,7 @@ namespace agk {
         }
 
         void SetPreviewCallback(PreviewCallback callback, int width, int height) override {
+            std::lock_guard<std::mutex> lock(m_previewMutex);
             m_previewCallback = callback;
             m_previewWidth = width;
             m_previewHeight = height;
@@ -468,8 +469,11 @@ namespace agk {
                             frameIndex++;
                         }
 
-                        if (m_previewCallback) {
-                            UpdatePreview(frame.get(), cropX, cropY, cropW, cropH, frameIndex);
+                        {
+                            std::lock_guard<std::mutex> lock(m_previewMutex);
+                            if (m_previewCallback) {
+                                UpdatePreview(frame.get(), cropX, cropY, cropW, cropH, (int)frameIndex);
+                            }
                         }
                     }
                 }
@@ -534,7 +538,10 @@ namespace agk {
             preview.linesize = m_previewWidth * 4;
             preview.timestamp = m_sync.GetRelativeTimeMs();
             
-            m_previewCallback(preview);
+            // Note: m_previewMutex is already held by the caller of UpdatePreview
+            if (m_previewCallback) {
+                m_previewCallback(preview);
+            }
         }
 
         std::unique_ptr<ConfigSystem> m_configSys;
@@ -570,6 +577,7 @@ namespace agk {
         mutable uint64_t m_lastStatsFrameCount = 0;
 
         // Preview
+        mutable std::mutex m_previewMutex;
         PreviewCallback m_previewCallback;
         int m_previewWidth = 640;
         int m_previewHeight = 360;

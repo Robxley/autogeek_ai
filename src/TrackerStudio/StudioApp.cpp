@@ -121,9 +121,10 @@ namespace agk {
         m_replayer = std::make_unique<SessionReplayer>(m_device, m_physDevice, m_descriptorPool, m_queueFamily, m_queue);
         m_sessionExplorer = std::make_unique<Widgets::SessionExplorer>(m_device, m_physDevice, m_descriptorPool, m_queueFamily, m_queue);
 
-        LiveMonitor* lm = m_liveMonitor.get();
-        m_engine->SetPreviewCallback([lm](const agk::PreviewFrame& frame) {
-            lm->OnPreviewFrame(frame);
+        m_engine->SetPreviewCallback([this](const agk::PreviewFrame& frame) {
+            if (m_liveMonitor) {
+                m_liveMonitor->OnPreviewFrame(frame);
+            }
         }, m_config.preview.width, m_config.preview.height);
 
         return true;
@@ -213,7 +214,7 @@ namespace agk {
             auto dock_id_left = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Left, 0.20f, nullptr, &dock_main_id);
             auto dock_id_right = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Right, 0.25f, nullptr, &dock_main_id);
 
-            ImGui::DockBuilderDockWindow("Timeline & Logs", dock_id_bottom);
+            ImGui::DockBuilderDockWindow(ICON_FA_TERMINAL " Timeline & Logs", dock_id_bottom);
             ImGui::DockBuilderDockWindow("Session Explorer", dock_id_left);
             ImGui::DockBuilderDockWindow("Recording Settings", dock_id_right);
             ImGui::DockBuilderDockWindow("Live Monitoring", dock_main_id);
