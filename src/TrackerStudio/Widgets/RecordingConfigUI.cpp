@@ -7,62 +7,106 @@
 namespace agk {
 namespace Widgets {
 
+    // Helper function for ImGui std::string inputs
+    struct InputTextCallback_UserData {
+        std::string* Str;
+        ImGuiInputTextCallback ChainCallback;
+        void* ChainCallbackUserData;
+    };
+    static int InputTextCallback(ImGuiInputTextCallbackData* data) {
+        InputTextCallback_UserData* user_data = (InputTextCallback_UserData*)data->UserData;
+        if (data->EventFlag == ImGuiInputTextFlags_CallbackResize) {
+            auto* str = user_data->Str;
+            str->resize(data->BufTextLen);
+            data->Buf = (char*)str->c_str();
+        }
+        if (user_data->ChainCallback) return user_data->ChainCallback(data);
+        return 0;
+    }
+    static bool ImGuiInputTextStr(const char* label, std::string* str, ImGuiInputTextFlags flags = 0, ImGuiInputTextCallback callback = nullptr, void* user_data = nullptr) {
+        flags |= ImGuiInputTextFlags_CallbackResize;
+        InputTextCallback_UserData cb_user_data;
+        cb_user_data.Str = str;
+        cb_user_data.ChainCallback = callback;
+        cb_user_data.ChainCallbackUserData = user_data;
+        return ImGui::InputText(label, (char*)str->c_str(), str->capacity() + 1, flags, InputTextCallback, &cb_user_data);
+    }
+
     void RecordingConfigUI::Render(std::shared_ptr<IRecordingEngine> engine) {
         if (!engine) return;
-
-        // Retrieve config and cast away constness locally for ImGui binding.
-        // It's safe here because IRecordingEngine provides SaveConfig which will read the modified struct.
-        // (If we had a pure setter for everything it would be too bloated, so we usually expose a mutable config or sync it).
-        // Since GetConfig() is const, wait! Let's just use ImGui and apply settings.
         
-        static char processBuffer[128] = "";
-        static bool firstRun = true;
-        
-        const Config& cfg = engine->GetConfig();
-        
-        if (firstRun) {
-            strncpy(processBuffer, cfg.target.process_name.c_str(), sizeof(processBuffer) - 1);
-            firstRun = false;
-        }
-
-        ImGui::Text(ICON_FA_WRENCH " Recording Settings");
-        ImGui::Separator();
-        ImGui::Spacing();
-        
-        ImGui::Text(ICON_FA_CROSSHAIRS " Target Selection");
-        
-        const char* modes[] = { "monitor_crop", "monitor", "window" };
-        int current_mode = 0;
-        for (int i = 0; i < 3; ++i) {
-            if (cfg.target.mode == modes[i]) current_mode = i;
-        }
-
-        if (ImGui::Combo("Capture Mode", &current_mode, modes, IM_ARRAYSIZE(modes))) {
-            engine->SetCaptureMode(modes[current_mode]);
-        }
-
-        if (ImGui::InputText("Target Process", processBuffer, IM_ARRAYSIZE(processBuffer))) {
-            engine->SetTargetProcess(processBuffer);
-        }
-
-        ImGui::Spacing(); ImGui::Spacing();
-        ImGui::Text(ICON_FA_FLOPPY_DISK " Configuration Management");
-        ImGui::Separator();
-        ImGui::Spacing();
+        Config& cfg = engine->GetMutableConfig();
 
         if (ImGui::Button(ICON_FA_DOWNLOAD " Save Config", ImVec2(120, 0))) {
             auto dest = pfd::save_file("Save Engine Config", "recording_config.json", {"JSON Files", "*.json", "All Files", "*"}).result();
-            if (!dest.empty()) {
-                engine->SaveConfig(dest);
-            }
+            if (!dest.empty()) engine->SaveConfig(dest);
         }
         ImGui::SameLine();
         if (ImGui::Button(ICON_FA_UPLOAD " Load Config", ImVec2(120, 0))) {
             auto src = pfd::open_file("Load Engine Config", "", {"JSON Files", "*.json", "All Files", "*"}).result();
-            if (!src.empty()) {
-                engine->LoadConfig(src[0]);
-                strncpy(processBuffer, engine->GetConfig().target.process_name.c_str(), sizeof(processBuffer) - 1);
+            if (!src.empty()) engine->LoadConfig(src[0]);
+        }
+        
+        ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
+
+        if (ImGui::CollapsingHeader(ICON_FA_STAR " Main Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
+            const char* modes[] = { "monitor_crop", "monitor", "window", "foreground" };
+            int current_mode = 0;
+            for (int i = 0; i < 4; ++i) {
+                if (cfg.target.mode == modes[i]) current_mode = i;
             }
+            if (ImGui::Combo("Capture Mode", &current_mode, modes, IM_ARRAYSIZE(modes))) {
+                engine->SetCaptureMode(modes[current_mode]);
+            }
+
+            ImGuiInputTextStr("Process Filter", &cfg.target.process_name);
+            ImGui::SameLine(); ImGui::TextDisabled("(for monitor_crop/window)");
+            ImGuiInputTextStr("Window Title", &cfg.target.window_title);
+            
+            ImGui::Checkbox("Capture Audio", &cfg.audio.enabled);
+            ImGui::Checkbox("Include Cursor", &cfg.target.include_cursor);
+        }
+
+        if (ImGui::CollapsingHeader(ICON_FA_VIDEO " Video Configuration")) {
+            ImGui::SliderInt("Target FPS", &cfg.video.target_fps, 10, 144);
+            ImGui::SliderInt("Bitrate (Kbps)", &cfg.video.bitrate_kbps, 1000, 50000);
+            ImGui::Checkbox("Use Source Resolution", &cfg.video.use_source_resolution);
+            if (!cfg.video.use_source_resolution) {
+                ImGui::InputInt("Target Width", &cfg.video.width);
+                ImGui::InputInt("Target Height", &cfg.video.height);
+            }
+            ImGuiInputTextStr("Encoder", &cfg.video.encoder);
+            ImGuiInputTextStr("Format", &cfg.video.format);
+        }
+
+        if (ImGui::CollapsingHeader(ICON_FA_MUSIC " Audio Configuration")) {
+            if (!cfg.audio.enabled) ImGui::BeginDisabled();
+            ImGui::Checkbox("Isolate Process Audio", &cfg.audio.is_process_isolated);
+            ImGui::Checkbox("Capture Desktop Audio", &cfg.audio.capture_system);
+            ImGui::Checkbox("Capture Microphone", &cfg.audio.capture_mic);
+            ImGui::SliderInt("Audio Bitrate (Kbps)", &cfg.audio.audio_bitrate_kbps, 64, 320);
+            if (!cfg.audio.enabled) ImGui::EndDisabled();
+        }
+
+        if (ImGui::CollapsingHeader(ICON_FA_GAMEPAD " Inputs Configuration")) {
+            ImGui::Checkbox("Record Inputs", &cfg.inputs.enabled);
+            if (!cfg.inputs.enabled) ImGui::BeginDisabled();
+            ImGui::Checkbox("Capture Mouse", &cfg.inputs.capture_mouse);
+            ImGui::Checkbox("Capture Keyboard", &cfg.inputs.capture_keyboard);
+            ImGui::Checkbox("Capture Gamepad", &cfg.inputs.capture_gamepad);
+            ImGui::Checkbox("Raw Input Mode", &cfg.inputs.raw_input_mode);
+            ImGui::SliderInt("Mouse Polling (ms)", &cfg.inputs.mouse_sampling_rate_ms, 1, 50);
+            ImGui::SliderInt("Gamepad Polling (ms)", &cfg.inputs.gamepad_polling_rate_ms, 1, 50);
+            ImGui::SliderFloat("Gamepad Deadzone", &cfg.inputs.gamepad_deadzone, 0.0f, 1.0f);
+            if (!cfg.inputs.enabled) ImGui::EndDisabled();
+        }
+
+        if (ImGui::CollapsingHeader(ICON_FA_MICROCHIP " Storage & System")) {
+            ImGuiInputTextStr("Storage Root Path", &cfg.storage.base_output_path);
+            ImGuiInputTextStr("Video Subfolder", &cfg.storage.video_subfolder);
+            ImGui::Checkbox("Hardware Acceleration", &cfg.system.gpu_acceleration);
+            ImGui::SliderInt("Internal FIFO Buffer", &cfg.system.internal_buffer_size, 10, 500);
+            ImGui::Checkbox("Drop Frames on Buffer Full", &cfg.system.drop_frames_on_buffer_full);
         }
     }
 

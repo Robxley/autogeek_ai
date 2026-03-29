@@ -36,6 +36,11 @@ namespace agk {
         bool Update(const std::string& processName, const std::string& windowTitle);
 
         /**
+         * @brief Updates tracking explicitly via HWND.
+         */
+        bool UpdateFromHWND(HWND hwnd);
+
+        /**
          * @brief Normalizes a screen coordinate to a 0.0-1.0 range relative to the target's client area.
          */
         void NormalizeCoordinates(int screenX, int screenY, double& outX, double& outY) const;

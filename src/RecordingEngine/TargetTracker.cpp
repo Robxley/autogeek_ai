@@ -51,12 +51,19 @@ namespace agk {
             GetClientRect(m_info.hwnd, &m_info.clientRect);
             m_info.width = m_info.clientRect.right - m_info.clientRect.left;
             m_info.height = m_info.clientRect.bottom - m_info.clientRect.top;
+
+            POINT pt = {0, 0};
+            ClientToScreen(m_info.hwnd, &pt);
+            m_info.clientRect.left += pt.x;
+            m_info.clientRect.right += pt.x;
+            m_info.clientRect.top += pt.y;
+            m_info.clientRect.bottom += pt.y;
             
             char title[MAX_PATH];
             GetWindowTextA(m_info.hwnd, title, MAX_PATH);
 
-            AGK_CORE_INFO("[TargetTracker] Match Found! HWND: {:p}, Title: '{}', PID: {}, Rect: {}x{}", 
-                (void*)m_info.hwnd, title, m_info.processId, m_info.width, m_info.height);
+            AGK_CORE_INFO("[TargetTracker] Match Found! HWND: {:p}, Title: '{}', PID: {}, Rect: {}x{} at Pos({},{})", 
+                (void*)m_info.hwnd, title, m_info.processId, m_info.width, m_info.height, m_info.clientRect.left, m_info.clientRect.top);
 
             HWND foreground = GetForegroundWindow();
             m_info.hasFocus = (foreground == m_info.hwnd);
@@ -67,6 +74,43 @@ namespace agk {
 
         AGK_CORE_WARN("[TargetTracker] No window found matching process='{}' or title='{}'", processName, windowTitle);
         return false;
+    }
+
+    bool TargetTracker::UpdateFromHWND(HWND hwnd) {
+        if (!hwnd || !IsWindowVisible(hwnd)) return false;
+
+        DWORD pid;
+        GetWindowThreadProcessId(hwnd, &pid);
+
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_info.hwnd = hwnd;
+        m_info.processId = pid;
+        
+        GetClientRect(m_info.hwnd, &m_info.clientRect);
+        m_info.width = m_info.clientRect.right - m_info.clientRect.left;
+        m_info.height = m_info.clientRect.bottom - m_info.clientRect.top;
+
+        POINT pt = {0, 0};
+        ClientToScreen(m_info.hwnd, &pt);
+        m_info.clientRect.left += pt.x;
+        m_info.clientRect.right += pt.x;
+        m_info.clientRect.top += pt.y;
+        m_info.clientRect.bottom += pt.y;
+        
+        char title[MAX_PATH];
+        GetWindowTextA(m_info.hwnd, title, MAX_PATH);
+        
+        static int _logThrottle = 0;
+        if ((_logThrottle++ % 60) == 0) {
+            AGK_CORE_INFO("[TargetTracker] HWND Updated: {:p}, Title: '{}', PID: {}, Rect: {}x{} at Pos({},{})", 
+                (void*)m_info.hwnd, title, m_info.processId, m_info.width, m_info.height, m_info.clientRect.left, m_info.clientRect.top);
+        }
+
+        HWND foreground = GetForegroundWindow();
+        m_info.hasFocus = (foreground == m_info.hwnd);
+        m_info.isMinimized = IsIconic(m_info.hwnd);
+
+        return true;
     }
 
     void TargetTracker::NormalizeCoordinates(int screenX, int screenY, double& outX, double& outY) const {

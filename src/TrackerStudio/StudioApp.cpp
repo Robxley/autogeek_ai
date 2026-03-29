@@ -1,5 +1,8 @@
 #include "StudioApp.hpp"
 #include <iostream>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 #include "imgui_impl_sdl3.h"
@@ -33,6 +36,14 @@ namespace agk {
     }
 
     bool StudioApp::Initialize() {
+#ifdef _WIN32
+        // Support for older Windows SDKs
+        #ifndef DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+        #define DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 ((HANDLE)-4)
+        #endif
+        SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+#endif
+
         agk::Log::Init();
         m_logUI = std::make_shared<Widgets::AppLogUI>();
         agk::Log::AddSink(m_logUI);
@@ -468,11 +479,18 @@ namespace agk {
 
     void StudioApp::Shutdown() {
         if (!m_device) return;
+        
+        if (m_engine) {
+            // Unbind preview immediately to prevent race conditions during exit
+            m_engine->SetPreviewCallback(nullptr, 0, 0);
+            m_engine->Stop();
+            m_engine.reset();
+        }
+
         vkDeviceWaitIdle(m_device);
         
         m_liveMonitor.reset();
         m_replayer.reset();
-        m_engine.reset();
 
         ImGui_ImplVulkan_Shutdown();
         ImGui_ImplSDL3_Shutdown();

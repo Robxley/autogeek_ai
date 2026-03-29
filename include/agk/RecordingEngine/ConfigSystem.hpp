@@ -96,6 +96,7 @@ namespace agk {
         std::string SaveToString() const;
 
         const Config& GetConfig() const { return m_config; }
+        Config& GetMutableConfig() { return m_config; }
 
     private:
         Config m_config;

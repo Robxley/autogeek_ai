@@ -63,6 +63,11 @@ namespace agk {
         virtual const Config& GetConfig() const = 0;
 
         /**
+         * @brief Returns a mutable reference to the active configuration.
+         */
+        virtual Config& GetMutableConfig() = 0;
+
+        /**
          * @brief Loads engine configuration from a file.
          */
         virtual bool LoadConfig(const std::string& path) = 0;

@@ -49,6 +49,6 @@
         "monitor_index": 0,
         "process_name": "",
         "wait_for_target": true,
-        "window_title": ""
+        "window_title": "PowerShell"
     }
 }

@@ -198,6 +198,16 @@ namespace agk {
             if (!xsClick.empty()) ImPlot::PlotScatter("Clicks", xsClick.data(), ysClick.data(), xsClick.size());
             if (!xsKey.empty()) ImPlot::PlotScatter("Keys", xsKey.data(), ysKey.data(), xsKey.size());
 
+            if (ImPlot::IsPlotHovered() && ImGui::IsMouseDown(0)) {
+                ImPlotPoint mousePos = ImPlot::GetPlotMousePos();
+                m_currentTime = mousePos.x;
+                if (m_currentTime < 0.0) m_currentTime = 0.0;
+                
+                int64_t stream_pts = m_currentTime / av_q2d(m_fmtCtx->streams[m_videoStreamIndex]->time_base);
+                av_seek_frame(m_fmtCtx.get(), m_videoStreamIndex, stream_pts, AVSEEK_FLAG_BACKWARD);
+                DecodeNextFrame();
+            }
+
             ImPlot::EndPlot();
         }
     }

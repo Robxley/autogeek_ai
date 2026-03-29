@@ -41,6 +41,7 @@ namespace agk {
 
         bool Initialize(const std::string& configPath = "") override {
             AGK_CORE_INFO("[Engine] Initializing sub-systems...");
+            m_targetTracker.EnableDpiAwareness();
             
             if (!configPath.empty()) {
                 if (m_configSys->LoadFromFile(configPath)) {
@@ -79,11 +80,14 @@ namespace agk {
         void Start() override {
             if (m_isRunning) return;
 
-            AGK_CORE_INFO("[Engine] START sequence: mode='{}', process='{}', window='{}'", 
-                m_config->target.mode, m_config->target.process_name, m_config->target.window_title);
+            AGK_CORE_INFO("[Engine] START sequence: mode='{}', monitor={}, process='{}', window='{}'", 
+                m_config->target.mode, m_config->target.monitor_index, m_config->target.process_name, m_config->target.window_title);
 
             // Step 1: Initialize Capture based on mode
-            if (m_config->target.mode == "window") {
+            if (m_config->target.mode == "foreground") {
+                HWND fg = GetForegroundWindow();
+                if (fg) m_targetTracker.UpdateFromHWND(fg);
+            } else if (m_config->target.mode == "window") {
                 if (!m_targetTracker.Update(m_config->target.process_name, m_config->target.window_title)) {
                     AGK_CORE_ERROR("[Engine] Target process/window not found. Aborting start.");
                     return;
@@ -218,6 +222,10 @@ namespace agk {
             return m_configSys->GetConfig();
         }
 
+        Config& GetMutableConfig() override {
+            return m_configSys->GetMutableConfig();
+        }
+
         bool LoadConfig(const std::string& path) override {
             return m_configSys->LoadFromFile(path);
         }
@@ -236,8 +244,40 @@ namespace agk {
             
             const double frameDuration = 1.0 / m_config->video.target_fps;
             int64_t frameIndex = 0;
+            auto lastTrackTime = std::chrono::steady_clock::now();
 
             while (m_isRunning) {
+                auto loopTime = std::chrono::steady_clock::now();
+
+                // Periodically update target tracking (every 1 second) regardless of pause state
+                if (std::chrono::duration_cast<std::chrono::milliseconds>(loopTime - lastTrackTime).count() >= 1000) {
+                    lastTrackTime = loopTime;
+                    
+                    if (m_config->target.mode == "foreground") {
+                        HWND fg = GetForegroundWindow();
+                        DWORD fgPid = 0;
+                        if (fg) GetWindowThreadProcessId(fg, &fgPid);
+                        
+                        // NOTE: GetCurrentProcessId() is TrackerStudio
+                        if (fgPid != GetCurrentProcessId()) {
+                            m_targetTracker.UpdateFromHWND(fg);
+                            if (m_isPaused && m_config->target.auto_resume_on_restore) {
+                                m_isPaused = false;
+                                m_sync.Resume();
+                                AGK_CORE_INFO("[Engine] Auto-Resumed (Focus shifted to external window).");
+                            }
+                        } else {
+                            if (!m_isPaused && m_config->target.auto_pause_on_minimize) {
+                                m_isPaused = true;
+                                m_sync.Pause();
+                                AGK_CORE_INFO("[Engine] Auto-Paused (Studio gained focus).");
+                            }
+                        }
+                    } else {
+                        m_targetTracker.Update(m_config->target.process_name, m_config->target.window_title);
+                    }
+                }
+
                 if (m_isPaused) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(10));
                     continue;
@@ -245,18 +285,13 @@ namespace agk {
 
                 auto startTime = std::chrono::steady_clock::now();
 
-                // Periodically update target tracking (every 2 seconds @ 60fps)
-                if (frameIndex % 120 == 0) {
-                    m_targetTracker.Update(m_config->target.process_name, m_config->target.window_title);
-                }
-
                 // Capture Frame
                 if (m_capture) {
                     if (auto frame = m_capture->AcquireNextFrame()) {
                         m_currentFrameIndex.store(frameIndex);
                         
                         int cropX = 0, cropY = 0, cropW = 0, cropH = 0;
-                        if (m_config->target.mode == "monitor_crop") {
+                        if (m_config->target.mode == "monitor_crop" || m_config->target.mode == "foreground") {
                             auto info = m_targetTracker.GetInfo();
                             cropX = (std::max)(0L, info.clientRect.left);
                             cropY = (std::max)(0L, info.clientRect.top);
@@ -276,7 +311,7 @@ namespace agk {
                         m_encoder.EncodeVideoFrame(frame->data, frame->linesize, frameIndex++, cropX, cropY, cropW, cropH);
 
                         if (m_previewCallback) {
-                            UpdatePreview(frame.get(), frameIndex);
+                            UpdatePreview(frame.get(), cropX, cropY, cropW, cropH, frameIndex);
                         }
                     }
                 }
@@ -298,21 +333,29 @@ namespace agk {
             }
         }
 
-        void UpdatePreview(const CaptureFrame* decodedFrame, int64_t frameIndex) {
+        void UpdatePreview(const CaptureFrame* decodedFrame, int cropX, int cropY, int cropW, int cropH, int64_t frameIndex) {
+            int actualSourceWidth = (cropW > 0) ? cropW : decodedFrame->width;
+            int actualSourceHeight = (cropH > 0) ? cropH : decodedFrame->height;
+            const uint8_t* srcData = decodedFrame->data;
+            
+            if (cropW > 0 && cropH > 0) {
+                srcData += (cropY * decodedFrame->linesize) + (cropX * 4); // BGRA offset
+            }
+
             // Re-allocate context only if source or destination dimensions change
             if (!m_swsPreviewCtx || 
-                m_lastSourceWidth != decodedFrame->width || 
-                m_lastSourceHeight != decodedFrame->height ||
+                m_lastSourceWidth != actualSourceWidth || 
+                m_lastSourceHeight != actualSourceHeight ||
                 m_lastPreviewWidth != m_previewWidth || 
                 m_lastPreviewHeight != m_previewHeight) {
                 
                 if (m_swsPreviewCtx) sws_freeContext(m_swsPreviewCtx);
-                m_swsPreviewCtx = sws_getContext(decodedFrame->width, decodedFrame->height, AV_PIX_FMT_BGRA,
+                m_swsPreviewCtx = sws_getContext(actualSourceWidth, actualSourceHeight, AV_PIX_FMT_BGRA,
                                                 m_previewWidth, m_previewHeight, AV_PIX_FMT_BGRA,
                                                 SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
                 
-                m_lastSourceWidth = decodedFrame->width;
-                m_lastSourceHeight = decodedFrame->height;
+                m_lastSourceWidth = actualSourceWidth;
+                m_lastSourceHeight = actualSourceHeight;
                 m_lastPreviewWidth = m_previewWidth;
                 m_lastPreviewHeight = m_previewHeight;
                 m_previewBuffer.resize(m_previewWidth * m_previewHeight * 4);
@@ -321,7 +364,10 @@ namespace agk {
             uint8_t* dest[1] = {m_previewBuffer.data()};
             int destLinesize[1] = {m_previewWidth * 4};
 
-            sws_scale(m_swsPreviewCtx, &decodedFrame->data, &decodedFrame->linesize, 0, decodedFrame->height, dest, destLinesize);
+            uint8_t* srcArray[1] = {const_cast<uint8_t*>(srcData)};
+            int srcLinesize[1] = {decodedFrame->linesize};
+
+            sws_scale(m_swsPreviewCtx, srcArray, srcLinesize, 0, actualSourceHeight, dest, destLinesize);
 
             PreviewFrame preview;
             preview.data = m_previewBuffer.data();
