@@ -225,8 +225,7 @@ namespace agk {
                 ev.type = j.value("type", "");
                 ev.timestamp = j.value("timestamp", 0ull);
                 
-                if (m_sessionStartTime == 0) m_sessionStartTime = ev.timestamp;
-                ev.time_sec = (ev.timestamp - m_sessionStartTime) / 1000000.0; // microseconds to seconds
+                ev.time_sec = ev.timestamp / 1000.0; // milliseconds to seconds
                 
                 if (ev.type == "mouse_click") {
                     ev.x = j.value("x", 0);

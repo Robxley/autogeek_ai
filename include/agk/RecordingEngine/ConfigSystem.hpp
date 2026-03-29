@@ -47,6 +47,7 @@ namespace agk {
             int monitor_index = 0;
             bool include_cursor = true;
             bool wait_for_target = true;
+            bool client_area_only = true;
             bool auto_pause_on_minimize = true;
             bool auto_resume_on_restore = true;
         } target;

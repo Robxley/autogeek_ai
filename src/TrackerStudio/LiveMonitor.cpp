@@ -1,5 +1,6 @@
 #include "LiveMonitor.hpp"
 #include "imgui_impl_vulkan.h"
+#include "implot.h"
 #include <iostream>
 #include <cstring>
 
@@ -18,6 +19,58 @@ namespace agk {
             CreateTexture(width, height);
             m_width = width;
             m_height = height;
+        }
+    }
+
+    void LiveMonitor::PushTelemetry(const EngineStats& stats, float targetFPS) {
+        double timeNow = stats.recordingTimeMs / 1000.0;
+        
+        if (timeNow - m_lastTelemetryTime >= 0.1) {
+            TelemetryFrame frame;
+            frame.time = timeNow;
+            frame.fps_ratio = (targetFPS > 0) ? (stats.currentFPS / targetFPS) : 0.0f;
+            frame.audio = stats.audioLevelRMS;
+            frame.mouse = std::min(1.0f, stats.mouseDeltaActivity / 100.0f);
+            frame.keyboard = std::min(1.0f, stats.keyboardActivityLevel / 10.0f);
+
+            m_telemetryHistory.push_back(frame);
+            m_lastTelemetryTime = timeNow;
+        }
+
+        while (!m_telemetryHistory.empty() && (timeNow - m_telemetryHistory.front().time) > 10.0) {
+            m_telemetryHistory.pop_front();
+        }
+    }
+
+    void LiveMonitor::DrawTelemetryUI() {
+        if (m_telemetryHistory.empty()) return;
+
+        if (ImPlot::BeginPlot("Telemetry", ImVec2(-1, 0), ImPlotFlags_NoLegend | ImPlotFlags_NoTitle)) {
+            double maxTime = m_telemetryHistory.back().time;
+            maxTime = std::max(maxTime, 10.0);
+            
+            ImPlot::SetupAxes(nullptr, nullptr, ImPlotAxisFlags_NoDecorations, ImPlotAxisFlags_NoDecorations);
+            ImPlot::SetupAxisLimits(ImAxis_X1, maxTime - 10.0, maxTime, ImGuiCond_Always);
+            ImPlot::SetupAxisLimits(ImAxis_Y1, -0.05, 1.2, ImGuiCond_Always);
+
+            std::vector<double> xs, ys_fps, ys_audio, ys_mouse, ys_keyboard;
+            for (const auto& tf : m_telemetryHistory) {
+                xs.push_back(tf.time);
+                ys_fps.push_back(tf.fps_ratio);
+                ys_audio.push_back(tf.audio);
+                ys_mouse.push_back(tf.mouse);
+                ys_keyboard.push_back(tf.keyboard);
+            }
+
+            if (!xs.empty()) { ImPlot::PlotLine("FPS Status", xs.data(), ys_fps.data(), xs.size()); }
+            
+            if (!xs.empty()) { ImPlot::PlotLine("Audio Signal", xs.data(), ys_audio.data(), xs.size()); }
+
+            if (!xs.empty()) { ImPlot::PlotLine("Mouse Tracking", xs.data(), ys_mouse.data(), xs.size()); }
+
+            if (!xs.empty()) { ImPlot::PlotLine("Keyboard Strokes", xs.data(), ys_keyboard.data(), xs.size()); }
+
+            ImPlot::EndPlot();
         }
     }
 

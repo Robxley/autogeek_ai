@@ -6,8 +6,10 @@
 #include <psapi.h>
 #include <shellscalingapi.h>
 #include <agk/RecordingEngine/Log.hpp>
+#include <dwmapi.h>
 
 #pragma comment(lib, "Shcore.lib")
+#pragma comment(lib, "Dwmapi.lib")
 
 // Support for older Windows SDKs
 #ifndef DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
@@ -48,16 +50,25 @@ namespace agk {
             m_pendingResult.hwnd = nullptr; // Clear for next use
 
             // Update current state details
-            GetClientRect(m_info.hwnd, &m_info.clientRect);
-            m_info.width = m_info.clientRect.right - m_info.clientRect.left;
-            m_info.height = m_info.clientRect.bottom - m_info.clientRect.top;
+            if (m_clientAreaOnly) {
+                GetClientRect(m_info.hwnd, &m_info.clientRect);
+                m_info.width = m_info.clientRect.right - m_info.clientRect.left;
+                m_info.height = m_info.clientRect.bottom - m_info.clientRect.top;
 
-            POINT pt = {0, 0};
-            ClientToScreen(m_info.hwnd, &pt);
-            m_info.clientRect.left += pt.x;
-            m_info.clientRect.right += pt.x;
-            m_info.clientRect.top += pt.y;
-            m_info.clientRect.bottom += pt.y;
+                POINT pt = {0, 0};
+                ClientToScreen(m_info.hwnd, &pt);
+                m_info.clientRect.left += pt.x;
+                m_info.clientRect.right += pt.x;
+                m_info.clientRect.top += pt.y;
+                m_info.clientRect.bottom += pt.y;
+            } else {
+                HRESULT hr = DwmGetWindowAttribute(m_info.hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &m_info.clientRect, sizeof(m_info.clientRect));
+                if (FAILED(hr)) {
+                    GetWindowRect(m_info.hwnd, &m_info.clientRect);
+                }
+                m_info.width = m_info.clientRect.right - m_info.clientRect.left;
+                m_info.height = m_info.clientRect.bottom - m_info.clientRect.top;
+            }
             
             char title[MAX_PATH];
             GetWindowTextA(m_info.hwnd, title, MAX_PATH);
@@ -86,16 +97,25 @@ namespace agk {
         m_info.hwnd = hwnd;
         m_info.processId = pid;
         
-        GetClientRect(m_info.hwnd, &m_info.clientRect);
-        m_info.width = m_info.clientRect.right - m_info.clientRect.left;
-        m_info.height = m_info.clientRect.bottom - m_info.clientRect.top;
+        if (m_clientAreaOnly) {
+            GetClientRect(m_info.hwnd, &m_info.clientRect);
+            m_info.width = m_info.clientRect.right - m_info.clientRect.left;
+            m_info.height = m_info.clientRect.bottom - m_info.clientRect.top;
 
-        POINT pt = {0, 0};
-        ClientToScreen(m_info.hwnd, &pt);
-        m_info.clientRect.left += pt.x;
-        m_info.clientRect.right += pt.x;
-        m_info.clientRect.top += pt.y;
-        m_info.clientRect.bottom += pt.y;
+            POINT pt = {0, 0};
+            ClientToScreen(m_info.hwnd, &pt);
+            m_info.clientRect.left += pt.x;
+            m_info.clientRect.right += pt.x;
+            m_info.clientRect.top += pt.y;
+            m_info.clientRect.bottom += pt.y;
+        } else {
+            HRESULT hr = DwmGetWindowAttribute(m_info.hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &m_info.clientRect, sizeof(m_info.clientRect));
+            if (FAILED(hr)) {
+                GetWindowRect(m_info.hwnd, &m_info.clientRect);
+            }
+            m_info.width = m_info.clientRect.right - m_info.clientRect.left;
+            m_info.height = m_info.clientRect.bottom - m_info.clientRect.top;
+        }
         
         char title[MAX_PATH];
         GetWindowTextA(m_info.hwnd, title, MAX_PATH);

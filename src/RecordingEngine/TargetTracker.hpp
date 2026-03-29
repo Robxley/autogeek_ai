@@ -45,6 +45,10 @@ namespace agk {
          */
         void NormalizeCoordinates(int screenX, int screenY, double& outX, double& outY) const;
 
+        void SetClientAreaOnly(bool enabled) { m_clientAreaOnly = enabled; }
+        
+        const std::string& GetSearchProcessName() const { return m_searchProcessName; }
+        const std::string& GetSearchWindowTitle() const { return m_searchWindowTitle; }
         const TargetInfo& GetInfo() const { return m_info; }
         
         /**
@@ -59,6 +63,7 @@ namespace agk {
         TargetInfo m_pendingResult; // Temporary for EnumWindowsProc
         std::string m_searchProcessName;
         std::string m_searchWindowTitle;
+        bool m_clientAreaOnly = true;
         mutable std::mutex m_mutex;
     };
 

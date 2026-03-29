@@ -60,7 +60,6 @@ namespace agk {
         std::shared_ptr<Widgets::AppLogUI> m_logUI;
 
         // UI State
-        bool m_isRecording = false;
         std::string m_selectedSession;
         bool m_firstLayout = true;
     };

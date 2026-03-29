@@ -4,9 +4,18 @@
 #include <agk/RecordingEngine/IRecordingEngine.hpp>
 #include <vector>
 #include <mutex>
+#include <deque>
 #include "imgui.h"
 
 namespace agk {
+
+    struct TelemetryFrame {
+        double time;
+        float fps_ratio;
+        float audio;
+        float mouse;
+        float keyboard;
+    };
 
     class LiveMonitor {
     public:
@@ -18,6 +27,9 @@ namespace agk {
         ImTextureID GetTextureID() const { return (ImTextureID)m_descriptorSet; }
 
         void OnPreviewFrame(const PreviewFrame& frame);
+        
+        void PushTelemetry(const EngineStats& stats, float targetFPS);
+        void DrawTelemetryUI();
 
     private:
         void CreateTexture(int width, int height);
@@ -40,6 +52,9 @@ namespace agk {
         std::vector<uint8_t> m_pendingData;
         std::mutex m_dataMutex;
         bool m_hasNewData = false;
+        
+        std::deque<TelemetryFrame> m_telemetryHistory;
+        double m_lastTelemetryTime = 0.0;
     };
 
 } // namespace agk

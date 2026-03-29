@@ -20,6 +20,28 @@ namespace agk {
     };
 
     /**
+     * @brief Detailed dynamic engine statistics.
+     */
+    struct EngineStats {
+        uint64_t recordingTimeMs = 0;
+        uint64_t framesCaptured = 0;
+        uint64_t framesDropped = 0;
+        float currentFPS = 0.0f; // Live FPS
+        float audioLevelRMS = 0.0f; // Silent preview peak meter
+        float mouseDeltaActivity = 0.0f; // Distance moved dynamically
+        float keyboardActivityLevel = 0.0f; // Keys pressed dynamically
+        std::string pauseReason = ""; // Empty if running, contains reason if paused
+    };
+
+    /**
+     * @brief Current target info (for Preview mode helpers).
+     */
+    struct TargetState {
+        std::string processName = "";
+        std::string windowTitle = "";
+    };
+
+    /**
      * @brief Callback type for receiving live preview frames.
      */
     using PreviewCallback = std::function<void(const PreviewFrame&)>;
@@ -33,9 +55,15 @@ namespace agk {
 
         virtual bool Initialize(const std::string& configPath = "") = 0;
         virtual void Start() = 0;
+        virtual void StartPreview() = 0; // Distinct silent preview
         virtual void Stop() = 0;
         virtual void Pause() = 0;
         virtual void Resume() = 0;
+        
+        virtual bool IsRecording() const = 0;
+        virtual bool IsPreviewing() const = 0;
+        virtual EngineStats GetStats() const = 0;
+        virtual TargetState GetTargetState() const = 0;
 
         /**
          * @brief Sets a callback for live preview (monitoring).

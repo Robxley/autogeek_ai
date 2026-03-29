@@ -47,7 +47,16 @@ namespace Widgets {
             if (!src.empty()) engine->LoadConfig(src[0]);
         }
         
+        bool isRec = engine->IsRecording();
+        if (isRec) {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(1, 0, 0, 1), "[Locked - Recording]");
+        }
+        
         ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
+
+        if (isRec) ImGui::BeginDisabled();
+        bool needsRestart = false;
 
         if (ImGui::CollapsingHeader(ICON_FA_STAR " Main Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
             const char* modes[] = { "monitor_crop", "monitor", "window", "foreground" };
@@ -57,14 +66,16 @@ namespace Widgets {
             }
             if (ImGui::Combo("Capture Mode", &current_mode, modes, IM_ARRAYSIZE(modes))) {
                 engine->SetCaptureMode(modes[current_mode]);
+                needsRestart = true;
             }
 
             ImGuiInputTextStr("Process Filter", &cfg.target.process_name);
             ImGui::SameLine(); ImGui::TextDisabled("(for monitor_crop/window)");
             ImGuiInputTextStr("Window Title", &cfg.target.window_title);
             
-            ImGui::Checkbox("Capture Audio", &cfg.audio.enabled);
+            if (ImGui::Checkbox("Capture Audio", &cfg.audio.enabled)) needsRestart = true;
             ImGui::Checkbox("Include Cursor", &cfg.target.include_cursor);
+            ImGui::Checkbox("Client Area Only (Ignore Title Bar)", &cfg.target.client_area_only);
         }
 
         if (ImGui::CollapsingHeader(ICON_FA_VIDEO " Video Configuration")) {
@@ -108,7 +119,13 @@ namespace Widgets {
             ImGui::SliderInt("Internal FIFO Buffer", &cfg.system.internal_buffer_size, 10, 500);
             ImGui::Checkbox("Drop Frames on Buffer Full", &cfg.system.drop_frames_on_buffer_full);
         }
-    }
 
+        if (isRec) ImGui::EndDisabled();
+
+        if (needsRestart && engine->IsPreviewing()) {
+            engine->Stop();
+            engine->StartPreview();
+        }
+    }
 }
 }

@@ -78,6 +78,7 @@ namespace agk {
                 m_config.target.monitor_index = jt.value("monitor_index", m_config.target.monitor_index);
                 m_config.target.include_cursor = jt.value("include_cursor", m_config.target.include_cursor);
                 m_config.target.wait_for_target = jt.value("wait_for_target", m_config.target.wait_for_target);
+                m_config.target.client_area_only = jt.value("client_area_only", m_config.target.client_area_only);
                 m_config.target.auto_pause_on_minimize = jt.value("auto_pause_on_minimize", m_config.target.auto_pause_on_minimize);
                 m_config.target.auto_resume_on_restore = jt.value("auto_resume_on_restore", m_config.target.auto_resume_on_restore);
             }
@@ -122,6 +123,7 @@ namespace agk {
         j["target"]["monitor_index"] = m_config.target.monitor_index;
         j["target"]["include_cursor"] = m_config.target.include_cursor;
         j["target"]["wait_for_target"] = m_config.target.wait_for_target;
+        j["target"]["client_area_only"] = m_config.target.client_area_only;
         j["target"]["auto_pause_on_minimize"] = m_config.target.auto_pause_on_minimize;
         j["target"]["auto_resume_on_restore"] = m_config.target.auto_resume_on_restore;
 

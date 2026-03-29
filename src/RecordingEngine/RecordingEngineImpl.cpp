@@ -30,7 +30,7 @@ namespace agk {
 
     class RecordingEngineImpl : public IRecordingEngine {
     public:
-        RecordingEngineImpl() : m_isRunning(false), m_isPaused(false), m_currentFrameIndex(0) {
+        RecordingEngineImpl() : m_isRunning(false), m_isPaused(false), m_isPreviewing(false), m_currentFrameIndex(0) {
             m_configSys = std::make_unique<ConfigSystem>();
             m_config = &m_configSys->GetConfig();
         }
@@ -66,10 +66,24 @@ namespace agk {
             // Setup Input callback
             m_rawInput.Initialize([this](const InputEvent& event) {
                 if (m_isRunning && !m_isPaused) {
-                    InputEvent trackedEvent = event;
-                    trackedEvent.timestamp = m_sync.GetRelativeTimeMs();
-                    trackedEvent.frameIndex = m_currentFrameIndex.load();
-                    m_serializer.SerializeEvent(trackedEvent);
+                    if (event.type == InputType::KeyDown) {
+                        m_telemetryKeys++;
+                    } else if (event.type == InputType::MouseMove) {
+                        if (m_lastMouseX != -1 && m_lastMouseY != -1) {
+                            double dx = event.x - m_lastMouseX;
+                            double dy = event.y - m_lastMouseY;
+                            m_telemetryMouseDistSq.fetch_add(static_cast<uint64_t>(dx * dx + dy * dy));
+                        }
+                        m_lastMouseX = static_cast<int>(event.x);
+                        m_lastMouseY = static_cast<int>(event.y);
+                    }
+
+                    if (!m_isPreviewing) {
+                        InputEvent trackedEvent = event;
+                        trackedEvent.timestamp = m_sync.GetRelativeTimeMs();
+                        trackedEvent.frameIndex = m_currentFrameIndex.load();
+                        m_serializer.SerializeEvent(trackedEvent);
+                    }
                 }
             }, &m_targetTracker);
 
@@ -77,11 +91,29 @@ namespace agk {
             return true;
         }
 
-        void Start() override {
+        void Start() override { InternalStart(false); }
+        void StartPreview() override { InternalStart(true); }
+
+        void InternalStart(bool previewOnly) {
             if (m_isRunning) return;
 
-            AGK_CORE_INFO("[Engine] START sequence: mode='{}', monitor={}, process='{}', window='{}'", 
-                m_config->target.mode, m_config->target.monitor_index, m_config->target.process_name, m_config->target.window_title);
+            m_isPreviewing = previewOnly;
+
+            {
+                std::lock_guard<std::mutex> lock(m_statsMutex);
+                m_currentStats = EngineStats(); // Reset stats
+                m_telemetryKeys = 0;
+                m_telemetryMouseDistSq = 0;
+                m_lastMouseX = -1;
+                m_lastMouseY = -1;
+                m_lastStatsTimeMs = 0;
+                m_lastStatsFrameCount = 0;
+            }
+
+            AGK_CORE_INFO("[Engine] START sequence (Preview={}): mode='{}', monitor={}, process='{}', window='{}'", 
+                previewOnly, m_config->target.mode, m_config->target.monitor_index, m_config->target.process_name, m_config->target.window_title);
+
+            m_targetTracker.SetClientAreaOnly(m_config->target.client_area_only);
 
             // Step 1: Initialize Capture based on mode
             if (m_config->target.mode == "foreground") {
@@ -122,10 +154,12 @@ namespace agk {
                 }
             }
 
-            // Step 2: Create session via SessionManager
-            if (!m_sessionManager.CreateSession(m_config->storage.base_output_path, *m_config)) {
-                AGK_CORE_ERROR("[Engine] Failed to create session directory");
-                return;
+            // Step 2: Create session via SessionManager ONLY if recording
+            if (!previewOnly) {
+                if (!m_sessionManager.CreateSession(m_config->storage.base_output_path, *m_config)) {
+                    AGK_CORE_ERROR("[Engine] Failed to create session directory");
+                    return;
+                }
             }
 
             // Step 2: Initialize Audio (before Encoder)
@@ -135,24 +169,40 @@ namespace agk {
                 m_targetTracker.Update(m_config->target.process_name, m_config->target.window_title);
                 DWORD pid = m_config->audio.is_process_isolated ? m_targetTracker.GetInfo().processId : 0;
                 
-                audioOk = m_audioCapture.Initialize(m_config->audio, [this](const AudioBuffer& buffer) {
-                    if (m_isRunning && !m_isPaused) {
-                        m_encoder.EncodeAudioBuffer(buffer.data.data(), buffer.sampleCount, buffer.timestamp);
+                audioOk = m_audioCapture.Initialize(m_config->audio, [this, previewOnly](const AudioBuffer& buffer) {
+                    if (m_isRunning && !m_isPaused && !buffer.data.empty()) {
+                        
+                        // Calculate Peak Amplitude for VU Meter
+                        float maxAmp = 0.0f;
+                        for (float sample : buffer.data) {
+                            maxAmp = (std::max)(maxAmp, std::abs(sample));
+                        }
+                        
+                        {
+                            std::lock_guard<std::mutex> lock(m_statsMutex);
+                            m_currentStats.audioLevelRMS = maxAmp; // using peak mapped directly
+                        }
+
+                        if (!previewOnly) {
+                            m_encoder.EncodeAudioBuffer(buffer.data.data(), buffer.sampleCount, buffer.timestamp);
+                        }
                     }
                 }, pid);
             }
 
-            std::string sessionPath = m_sessionManager.GetSessionPath();
-            std::string videoPath = sessionPath + "/video.mkv";
-            std::string eventsPath = sessionPath + "/" + m_config->storage.events_filename;
+            if (!previewOnly) {
+                std::string sessionPath = m_sessionManager.GetSessionPath();
+                std::string videoPath = sessionPath + "/video.mkv";
+                std::string eventsPath = sessionPath + "/" + m_config->storage.events_filename;
 
-            if (!m_encoder.Initialize(videoPath, m_config->video, m_config->audio, audioOk ? m_audioCapture.GetFormat() : nullptr)) {
-                AGK_CORE_ERROR("[Engine] Failed to initialize EncoderModule");
-                return;
-            }
+                if (!m_encoder.Initialize(videoPath, m_config->video, m_config->audio, audioOk ? m_audioCapture.GetFormat() : nullptr)) {
+                    AGK_CORE_ERROR("[Engine] Failed to initialize EncoderModule");
+                    return;
+                }
 
-            if (!m_serializer.Open(eventsPath)) {
-                AGK_CORE_ERROR("[Engine] Failed to open events file: {}", eventsPath);
+                if (!m_serializer.Open(eventsPath)) {
+                    AGK_CORE_ERROR("[Engine] Failed to open events file: {}", eventsPath);
+                }
             }
 
             m_isRunning = true;
@@ -160,29 +210,35 @@ namespace agk {
             m_currentFrameIndex = 0;
             m_sync.Start();
             
-            m_rawInput.Start();
+            if (!previewOnly) m_rawInput.Start();
             if (audioOk) m_audioCapture.Start();
             
             m_recordingThread = std::thread(&RecordingEngineImpl::RecordingLoop, this);
             
-            AGK_CORE_INFO("[Engine] Recording started (Video + Audio + Inputs).");
+            AGK_CORE_INFO("[Engine] {} started.", previewOnly ? "Preview" : "Recording");
         }
 
         void Stop() override {
             if (!m_isRunning) return;
 
             m_isRunning = false;
-            m_rawInput.Stop();
+            
+            if (!m_isPreviewing) m_rawInput.Stop();
+            
             m_audioCapture.Stop();
 
             if (m_recordingThread.joinable()) {
                 m_recordingThread.join();
             }
 
-            m_encoder.Finalize();
-            m_serializer.Close();
+            if (!m_isPreviewing) {
+                m_encoder.Finalize();
+                m_serializer.Close();
+            }
             
-            AGK_CORE_INFO("[Engine] Recording stopped and finalized.");
+            AGK_CORE_INFO("[Engine] {} stopped.", m_isPreviewing ? "Preview" : "Recording");
+            
+            m_isPreviewing = false;
         }
 
         void Pause() override {
@@ -234,6 +290,45 @@ namespace agk {
             return m_configSys->SaveToFile(path);
         }
 
+        bool IsRecording() const override { return m_isRunning && !m_isPreviewing; }
+        bool IsPreviewing() const override { return m_isRunning && m_isPreviewing; }
+        
+        EngineStats GetStats() const override {
+            std::lock_guard<std::mutex> lock(m_statsMutex);
+            EngineStats stats = m_currentStats;
+            if (m_isRunning) {
+                uint64_t nowMs = m_sync.GetRelativeTimeMs();
+                stats.recordingTimeMs = nowMs;
+                stats.framesCaptured = m_currentFrameIndex.load();
+                
+                uint64_t dt = nowMs - m_lastStatsTimeMs;
+                if (dt >= 100) { // Re-compute running 10Hz sampling
+                    uint64_t df = stats.framesCaptured - m_lastStatsFrameCount;
+                    m_currentStats.currentFPS = (float)df / (dt / 1000.0f);
+                    m_currentStats.keyboardActivityLevel = (float)m_telemetryKeys.exchange(0) / (dt / 1000.0f);
+                    m_currentStats.mouseDeltaActivity = std::sqrt((float)m_telemetryMouseDistSq.exchange(0));
+                    
+                    m_lastStatsTimeMs = nowMs;
+                    m_lastStatsFrameCount = stats.framesCaptured;
+                }
+                
+                stats.currentFPS = m_currentStats.currentFPS;
+                stats.keyboardActivityLevel = m_currentStats.keyboardActivityLevel;
+                stats.mouseDeltaActivity = m_currentStats.mouseDeltaActivity;
+            }
+            return stats;
+        }
+
+        TargetState GetTargetState() const override {
+            TargetState state;
+            auto info = m_targetTracker.GetInfo();
+            state.processName = m_targetTracker.GetSearchProcessName();
+            char title[MAX_PATH] = {0};
+            if (info.hwnd) GetWindowTextA(info.hwnd, title, MAX_PATH);
+            state.windowTitle = title;
+            return state;
+        }
+
     private:
         void RecordingLoop() {
             try {
@@ -264,12 +359,14 @@ namespace agk {
                             if (m_isPaused && m_config->target.auto_resume_on_restore) {
                                 m_isPaused = false;
                                 m_sync.Resume();
+                                { std::lock_guard<std::mutex> lock(m_statsMutex); m_currentStats.pauseReason = ""; }
                                 AGK_CORE_INFO("[Engine] Auto-Resumed (Focus shifted to external window).");
                             }
                         } else {
                             if (!m_isPaused && m_config->target.auto_pause_on_minimize) {
                                 m_isPaused = true;
                                 m_sync.Pause();
+                                { std::lock_guard<std::mutex> lock(m_statsMutex); m_currentStats.pauseReason = "Studio gained focus"; }
                                 AGK_CORE_INFO("[Engine] Auto-Paused (Studio gained focus).");
                             }
                         }
@@ -308,7 +405,11 @@ namespace agk {
                             }
                         }
                         
-                        m_encoder.EncodeVideoFrame(frame->data, frame->linesize, frameIndex++, cropX, cropY, cropW, cropH);
+                        if (!m_isPreviewing) {
+                            m_encoder.EncodeVideoFrame(frame->data, frame->linesize, frameIndex++, cropX, cropY, cropW, cropH);
+                        } else {
+                            frameIndex++;
+                        }
 
                         if (m_previewCallback) {
                             UpdatePreview(frame.get(), cropX, cropY, cropW, cropH, frameIndex);
@@ -392,8 +493,20 @@ namespace agk {
         
         std::atomic<bool> m_isRunning;
         std::atomic<bool> m_isPaused;
+        std::atomic<bool> m_isPreviewing;
         std::atomic<int64_t> m_currentFrameIndex;
         std::thread m_recordingThread;
+
+        mutable EngineStats m_currentStats;
+        mutable std::mutex m_statsMutex;
+        
+        // Telemetry accumulation
+        mutable std::atomic<uint64_t> m_telemetryKeys{0};
+        mutable std::atomic<uint64_t> m_telemetryMouseDistSq{0};
+        mutable int m_lastMouseX = -1;
+        mutable int m_lastMouseY = -1;
+        mutable uint64_t m_lastStatsTimeMs = 0;
+        mutable uint64_t m_lastStatsFrameCount = 0;
 
         // Preview
         PreviewCallback m_previewCallback;

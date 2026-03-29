@@ -203,15 +203,19 @@ namespace agk {
             ImGui::DockBuilderSetNodeSize(dockspace_id, ImGui::GetMainViewport()->Size);
 
             auto dock_main_id = dockspace_id;
+
+            // 1. Split entire bottom spanning full width.
+            auto dock_id_bottom = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Down, 0.20f, nullptr, &dock_main_id);
+            
+            // 2. Split remaining upper region into Left, Right, Center columns.
             auto dock_id_left = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Left, 0.20f, nullptr, &dock_main_id);
             auto dock_id_right = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Right, 0.25f, nullptr, &dock_main_id);
-            auto dock_id_bottom = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Down, 0.25f, nullptr, &dock_main_id);
 
+            ImGui::DockBuilderDockWindow("Timeline & Logs", dock_id_bottom);
             ImGui::DockBuilderDockWindow("Session Explorer", dock_id_left);
+            ImGui::DockBuilderDockWindow("Recording Settings", dock_id_right);
             ImGui::DockBuilderDockWindow("Live Monitoring", dock_main_id);
             ImGui::DockBuilderDockWindow("Session Replayer", dock_main_id); // Under same tab as Live Monitoring
-            ImGui::DockBuilderDockWindow("Recording Settings", dock_id_right);
-            ImGui::DockBuilderDockWindow("Timeline & Logs", dock_id_bottom);
             
             ImGui::DockBuilderFinish(dockspace_id);
         }
@@ -294,18 +298,59 @@ namespace agk {
 
             // --- Panel: Live Monitoring ---
             ImGui::Begin("Live Monitoring");
-            if (ImGui::Button(m_isRecording ? ICON_FA_STOP " Stop Recording" : ICON_FA_CIRCLE " Start Recording")) {
-                if (m_isRecording) {
-                    AGK_CORE_INFO("[StudioApp] User requested STOP Recording");
+            
+            bool isRec = m_engine->IsRecording();
+            bool isPrev = m_engine->IsPreviewing();
+            
+            if (ImGui::Button(isPrev ? ICON_FA_STOP " Stop Preview" : ICON_FA_EYE " Preview")) {
+                if (isPrev) {
+                    AGK_CORE_INFO("[StudioApp] User STOPPED Preview");
                     m_engine->Stop();
                 } else {
-                    AGK_CORE_INFO("[StudioApp] User requested START Recording");
-                    m_engine->Start();
+                    AGK_CORE_INFO("[StudioApp] User STARTED Preview");
+                    if (isRec) m_engine->Stop();
+                    m_engine->StartPreview();
                 }
-                m_isRecording = !m_isRecording;
             }
             ImGui::SameLine();
-            ImGui::Text("Status: %s", m_isRecording ? "RECORDING" : "IDLE");
+            if (ImGui::Button(isRec ? ICON_FA_STOP " Stop Recording" : ICON_FA_CIRCLE " Record")) {
+                if (isRec) {
+                    AGK_CORE_INFO("[StudioApp] User STOPPED Recording");
+                    m_engine->Stop();
+                } else {
+                    AGK_CORE_INFO("[StudioApp] User STARTED Recording");
+                    if (isPrev) m_engine->Stop();
+                    m_engine->Start();
+                }
+            }
+            
+            ImGui::Separator();
+            
+            agk::EngineStats stats = m_engine->GetStats();
+            std::string stateStr = isRec ? "RECORDING" : (isPrev ? "PREVIEWING" : "IDLE");
+            if (!stats.pauseReason.empty()) stateStr += " (Paused: " + stats.pauseReason + ")";
+            ImGui::Text("Status: %s", stateStr.c_str());
+            
+            if (isRec || isPrev) {
+                m_liveMonitor->PushTelemetry(stats, (float)m_engine->GetConfig().video.target_fps);
+                ImGui::SameLine(0, 20);
+                ImGui::TextDisabled("⏱ %.1f s", stats.recordingTimeMs / 1000.0f);
+                ImGui::SameLine(0, 20);
+                ImGui::TextDisabled("Frames: %llu (Drops: %llu)", stats.framesCaptured, stats.framesDropped);
+                
+                if (isPrev && m_engine->GetConfig().target.mode != "monitor") {
+                    agk::TargetState ts = m_engine->GetTargetState();
+                    ImGui::SameLine(0, 20);
+                    ImGui::TextColored(ImVec4(0.3f, 0.8f, 0.3f, 1.0f), "[Focus: %s | %s]", ts.processName.c_str(), ts.windowTitle.c_str());
+                    if (ImGui::Button(ICON_FA_LOCK " Lock Target")) {
+                        m_engine->GetMutableConfig().target.process_name = ts.processName;
+                        m_engine->GetMutableConfig().target.window_title = ts.windowTitle;
+                        m_engine->GetMutableConfig().target.mode = "window";
+                        m_engine->Stop();
+                        m_engine->StartPreview();
+                    }
+                }
+            }
 
             if (m_liveMonitor->GetTextureID()) {
                 float aspect = (float)m_config.preview.width / (float)m_config.preview.height;
@@ -323,6 +368,19 @@ namespace agk {
                 if (padX > 0) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + padX);
 
                 ImGui::Image(m_liveMonitor->GetTextureID(), ImVec2(targetW, targetH));
+                
+                // Audio VU Meter under the image
+                if (m_engine->GetConfig().audio.enabled && (isRec || isPrev)) {
+                    ImGui::Spacing();
+                    ImGui::Text(ICON_FA_MUSIC " Audio Level:");
+                    ImGui::ProgressBar(stats.audioLevelRMS, ImVec2(-1.0f, 12.0f), "");
+                }
+                
+                if (isRec || isPrev) {
+                    ImGui::Spacing();
+                    m_liveMonitor->DrawTelemetryUI();
+                }
+
             } else {
                 ImGui::Text("Waiting for live stream...");
             }

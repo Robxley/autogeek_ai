@@ -86,7 +86,6 @@ namespace agk {
             std::string key_name;
         };
         std::vector<SessionEvent> m_events;
-        uint64_t m_sessionStartTime = 0;
         
         bool LoadEvents(const std::string& eventsPath);
     };
