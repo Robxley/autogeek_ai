@@ -73,7 +73,7 @@ namespace agk {
             char title[MAX_PATH];
             GetWindowTextA(m_info.hwnd, title, MAX_PATH);
 
-            AGK_CORE_INFO("[TargetTracker] Match Found! HWND: {:p}, Title: '{}', PID: {}, Rect: {}x{} at Pos({},{})", 
+            AGK_CORE_TRACE("[TargetTracker] Match Found! HWND: {:p}, Title: '{}', PID: {}, Rect: {}x{} at Pos({},{})", 
                 (void*)m_info.hwnd, title, m_info.processId, m_info.width, m_info.height, m_info.clientRect.left, m_info.clientRect.top);
 
             HWND foreground = GetForegroundWindow();

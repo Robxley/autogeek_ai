@@ -14,6 +14,7 @@ module;
 #include "EventSerializer.hpp"
 #include "TargetTracker.hpp"
 #include "SessionManager.hpp"
+#include "ImageUtils.hpp"
 #include "WASAPICapture.hpp"
 extern "C" {
 #include <libswscale/swscale.h>
@@ -255,6 +256,13 @@ namespace agk {
             AGK_CORE_INFO("[Engine] Recording resumed.");
         }
 
+        void CaptureScreenshot(const std::string& filename = "") override {
+            std::lock_guard<std::mutex> lock(m_screenshotMutex);
+            m_screenshotFilename = filename;
+            m_screenshotRequested = true;
+            AGK_CORE_INFO("[Engine] Screenshot requested: {}", filename.empty() ? "Auto-Named" : filename);
+        }
+
         void SetPreviewCallback(PreviewCallback callback, int width, int height) override {
             m_previewCallback = callback;
             m_previewWidth = width;
@@ -326,6 +334,8 @@ namespace agk {
             char title[MAX_PATH] = {0};
             if (info.hwnd) GetWindowTextA(info.hwnd, title, MAX_PATH);
             state.windowTitle = title;
+            state.width = info.width;
+            state.height = info.height;
             return state;
         }
 
@@ -387,7 +397,7 @@ namespace agk {
                     if (auto frame = m_capture->AcquireNextFrame()) {
                         m_currentFrameIndex.store(frameIndex);
                         
-                        int cropX = 0, cropY = 0, cropW = 0, cropH = 0;
+                        int cropX = 0, cropY = 0, cropW = frame->width, cropH = frame->height;
                         if (m_config->target.mode == "monitor_crop" || m_config->target.mode == "foreground") {
                             auto info = m_targetTracker.GetInfo();
                             cropX = (std::max)(0L, info.clientRect.left);
@@ -395,16 +405,63 @@ namespace agk {
                             cropW = (std::max)(0L, info.clientRect.right - info.clientRect.left);
                             cropH = (std::max)(0L, info.clientRect.bottom - info.clientRect.top);
 
-                            if (cropX + cropW > frame->width) cropW = frame->width - cropX;
-                            if (cropY + cropH > frame->height) cropH = frame->height - cropY;
-                            
-                            if (cropW % 2 != 0) cropW--;
-                            if (cropH % 2 != 0) cropH--;
-                            if (cropW <= 0 || cropH <= 0) {
-                                cropX = 0; cropY = 0; cropW = 0; cropH = 0;
-                            }
                         }
                         
+                        // Ensure dimensions are even for FFmpeg/YUV420P compatibility
+                        if (cropW % 2 != 0) cropW--;
+                        if (cropH % 2 != 0) cropH--;
+                        
+                        if (cropW <= 0 || cropH <= 0) {
+                            cropX = 0; cropY = 0; cropW = frame->width; cropH = frame->height;
+                            if (cropW % 2 != 0) cropW--;
+                            if (cropH % 2 != 0) cropH--;
+                        }
+                        
+                        // Screenshot & Thumbnail evaluation
+                        bool grabThumbnail = (!m_isPreviewing && frameIndex == 0);
+                        bool grabScreenshot = m_screenshotRequested.exchange(false);
+                        
+                        if (grabThumbnail || grabScreenshot) {
+                            std::string path;
+                            int targetW = frame->width;
+                            int targetH = frame->height;
+                            bool scale480 = false;
+                            
+                            if (grabScreenshot) {
+                                std::lock_guard<std::mutex> lock(m_screenshotMutex);
+                                path = m_screenshotFilename;
+                                if (path.empty()) {
+                                    if (!m_isPreviewing) {
+                                        path = m_sessionManager.GetSessionPath() + "/screenshot_" + std::to_string(m_sync.GetRelativeTimeMs()) + ".png";
+                                    } else {
+                                        path = m_config->storage.base_output_path + "/preview_screenshot_" + std::to_string(m_sync.GetRelativeTimeMs()) + ".png";
+                                    }
+                                }
+                            } else if (grabThumbnail) {
+                                path = m_sessionManager.GetSessionPath() + "/thumbnail.png";
+                                scale480 = true; // Auto thumbnail at 480p
+                            }
+
+                            if (!path.empty()) {
+                                const uint8_t* rawData = frame->data;
+                                if (cropW > 0 && cropH > 0) {
+                                    rawData += (cropY * frame->linesize) + (cropX * 4);
+                                    targetW = cropW;
+                                    targetH = cropH;
+                                }
+
+                                if (scale480) {
+                                    std::vector<uint8_t> scaledData;
+                                    int scaledW, scaledH;
+                                    agk::DownscaleBGRA_480p(rawData, targetW, targetH, frame->linesize, scaledData, scaledW, scaledH);
+                                    agk::SaveImagePNG(path, scaledW, scaledH, 4, scaledData.data(), scaledW * 4);
+                                } else {
+                                    agk::SaveImagePNG(path, targetW, targetH, 4, rawData, frame->linesize);
+                                }
+                                AGK_CORE_INFO("[Engine] Extracted image frame to {}", path);
+                            }
+                        }
+
                         if (!m_isPreviewing) {
                             m_encoder.EncodeVideoFrame(frame->data, frame->linesize, frameIndex++, cropX, cropY, cropW, cropH);
                         } else {
@@ -496,6 +553,10 @@ namespace agk {
         std::atomic<bool> m_isPreviewing;
         std::atomic<int64_t> m_currentFrameIndex;
         std::thread m_recordingThread;
+
+        std::atomic<bool> m_screenshotRequested{false};
+        std::mutex m_screenshotMutex;
+        std::string m_screenshotFilename;
 
         mutable EngineStats m_currentStats;
         mutable std::mutex m_statsMutex;

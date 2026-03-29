@@ -11,6 +11,7 @@ target_sources(RecordingEngine
     PRIVATE
         RecordingEngineImpl.cpp
         ConfigSystem.cpp
+        ImageUtils.cpp
         Log.cpp
         DXGIMonitorCapture.cpp
         WGCWindowCapture.cpp

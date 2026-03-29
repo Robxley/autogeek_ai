@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <memory>
 #include <SDL3/SDL.h>
 #include <vulkan/vulkan.h>
 #include "imgui.h"
@@ -12,7 +13,10 @@
 namespace agk {
     class LiveMonitor;
     class SessionReplayer;
-    namespace Widgets { class AppLogUI; }
+    namespace Widgets { 
+        class AppLogUI; 
+        class SessionExplorer;
+    }
 }
 
 namespace agk {
@@ -57,6 +61,7 @@ namespace agk {
         // Widgets / Modules
         std::unique_ptr<LiveMonitor> m_liveMonitor;
         std::unique_ptr<SessionReplayer> m_replayer;
+        std::unique_ptr<Widgets::SessionExplorer> m_sessionExplorer;
         std::shared_ptr<Widgets::AppLogUI> m_logUI;
 
         // UI State

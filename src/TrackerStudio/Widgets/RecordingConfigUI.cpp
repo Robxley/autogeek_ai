@@ -3,6 +3,7 @@
 #include <string>
 #include "portable-file-dialogs.h"
 #include "../IconsFontAwesome6.h"
+#include "UIHelpers.hpp"
 
 namespace agk {
 namespace Widgets {
@@ -37,15 +38,18 @@ namespace Widgets {
         
         Config& cfg = engine->GetMutableConfig();
 
-        if (ImGui::Button(ICON_FA_DOWNLOAD " Save Config", ImVec2(120, 0))) {
+        if (ImGui::Button(ICON_FA_DOWNLOAD "##SaveCfg", ImVec2(28, 28))) {
             auto dest = pfd::save_file("Save Engine Config", "recording_config.json", {"JSON Files", "*.json", "All Files", "*"}).result();
             if (!dest.empty()) engine->SaveConfig(dest);
         }
+        agk::UI::ItemTooltip("Save Configuration");
+        
         ImGui::SameLine();
-        if (ImGui::Button(ICON_FA_UPLOAD " Load Config", ImVec2(120, 0))) {
+        if (ImGui::Button(ICON_FA_UPLOAD "##LoadCfg", ImVec2(28, 28))) {
             auto src = pfd::open_file("Load Engine Config", "", {"JSON Files", "*.json", "All Files", "*"}).result();
             if (!src.empty()) engine->LoadConfig(src[0]);
         }
+        agk::UI::ItemTooltip("Load Configuration");
         
         bool isRec = engine->IsRecording();
         if (isRec) {
@@ -76,11 +80,41 @@ namespace Widgets {
             if (ImGui::Checkbox("Capture Audio", &cfg.audio.enabled)) needsRestart = true;
             ImGui::Checkbox("Include Cursor", &cfg.target.include_cursor);
             ImGui::Checkbox("Client Area Only (Ignore Title Bar)", &cfg.target.client_area_only);
+            agk::UI::HelpMarker("When capturing a specific window, ignores the Windows title bar and borders if checked.");
         }
 
         if (ImGui::CollapsingHeader(ICON_FA_VIDEO " Video Configuration")) {
             ImGui::SliderInt("Target FPS", &cfg.video.target_fps, 10, 144);
             ImGui::SliderInt("Bitrate (Kbps)", &cfg.video.bitrate_kbps, 1000, 50000);
+            
+            ImGui::TextDisabled("Quick Resolution Scaling (based on current target):");
+            if (ImGui::Button("1:1 (Native)")) {
+                auto ts = engine->GetTargetState();
+                if (ts.width > 0) { 
+                    cfg.video.width = ts.width & ~1; 
+                    cfg.video.height = ts.height & ~1; 
+                    cfg.video.use_source_resolution = false; 
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("1:2 (Half)")) {
+                auto ts = engine->GetTargetState();
+                if (ts.width > 0) { 
+                    cfg.video.width = (ts.width / 2) & ~1; 
+                    cfg.video.height = (ts.height / 2) & ~1; 
+                    cfg.video.use_source_resolution = false; 
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("1:4 (Quarter)")) {
+                auto ts = engine->GetTargetState();
+                if (ts.width > 0) { 
+                    cfg.video.width = (ts.width / 4) & ~1; 
+                    cfg.video.height = (ts.height / 4) & ~1; 
+                    cfg.video.use_source_resolution = false; 
+                }
+            }
+
             ImGui::Checkbox("Use Source Resolution", &cfg.video.use_source_resolution);
             if (!cfg.video.use_source_resolution) {
                 ImGui::InputInt("Target Width", &cfg.video.width);
@@ -106,6 +140,7 @@ namespace Widgets {
             ImGui::Checkbox("Capture Keyboard", &cfg.inputs.capture_keyboard);
             ImGui::Checkbox("Capture Gamepad", &cfg.inputs.capture_gamepad);
             ImGui::Checkbox("Raw Input Mode", &cfg.inputs.raw_input_mode);
+            agk::UI::HelpMarker("Captures inputs at the OS/driver level via RawInput API, preventing missed keystrokes during intensive gameplay. Required for low-latency telemetry.");
             ImGui::SliderInt("Mouse Polling (ms)", &cfg.inputs.mouse_sampling_rate_ms, 1, 50);
             ImGui::SliderInt("Gamepad Polling (ms)", &cfg.inputs.gamepad_polling_rate_ms, 1, 50);
             ImGui::SliderFloat("Gamepad Deadzone", &cfg.inputs.gamepad_deadzone, 0.0f, 1.0f);
@@ -116,7 +151,9 @@ namespace Widgets {
             ImGuiInputTextStr("Storage Root Path", &cfg.storage.base_output_path);
             ImGuiInputTextStr("Video Subfolder", &cfg.storage.video_subfolder);
             ImGui::Checkbox("Hardware Acceleration", &cfg.system.gpu_acceleration);
+            agk::UI::HelpMarker("Utilize GPU decoding/encoding when available (e.g. NVIDIA NVENC). Strongly recommended for 60fps captures without system stutter.");
             ImGui::SliderInt("Internal FIFO Buffer", &cfg.system.internal_buffer_size, 10, 500);
+            agk::UI::HelpMarker("Size of the multithreaded Queue. Increase if frames are dropping due to slow disk writes, but it will consume more RAM.");
             ImGui::Checkbox("Drop Frames on Buffer Full", &cfg.system.drop_frames_on_buffer_full);
         }
 

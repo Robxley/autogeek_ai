@@ -19,6 +19,7 @@
 #include "Widgets/SessionExplorer.hpp"
 #include "Widgets/RecordingConfigUI.hpp"
 #include "Widgets/AppLogUI.hpp"
+#include "Widgets/UIHelpers.hpp"
 #include <agk/RecordingEngine/Log.hpp>
 
 namespace agk {
@@ -118,6 +119,7 @@ namespace agk {
         m_liveMonitor->Initialize(m_config.preview.width, m_config.preview.height);
 
         m_replayer = std::make_unique<SessionReplayer>(m_device, m_physDevice, m_descriptorPool, m_queueFamily, m_queue);
+        m_sessionExplorer = std::make_unique<Widgets::SessionExplorer>(m_device, m_physDevice, m_descriptorPool, m_queueFamily, m_queue);
 
         LiveMonitor* lm = m_liveMonitor.get();
         m_engine->SetPreviewCallback([lm](const agk::PreviewFrame& frame) {
@@ -293,7 +295,7 @@ namespace agk {
 
             // --- Panel: Session Explorer ---
             ImGui::Begin("Session Explorer");
-            agk::Widgets::SessionExplorer::Render(m_config, m_engine, m_replayer.get());
+            if (m_sessionExplorer) m_sessionExplorer->Render(m_config, m_engine, m_replayer.get());
             ImGui::End();
 
             // --- Panel: Live Monitoring ---
@@ -302,7 +304,7 @@ namespace agk {
             bool isRec = m_engine->IsRecording();
             bool isPrev = m_engine->IsPreviewing();
             
-            if (ImGui::Button(isPrev ? ICON_FA_STOP " Stop Preview" : ICON_FA_EYE " Preview")) {
+            if (ImGui::Button(isPrev ? ICON_FA_STOP "##Preview" : ICON_FA_EYE "##Preview", ImVec2(32, 32))) {
                 if (isPrev) {
                     AGK_CORE_INFO("[StudioApp] User STOPPED Preview");
                     m_engine->Stop();
@@ -312,8 +314,10 @@ namespace agk {
                     m_engine->StartPreview();
                 }
             }
+            agk::UI::ItemTooltip(isPrev ? "Stop Previewing" : "Start Live Preview");
+            
             ImGui::SameLine();
-            if (ImGui::Button(isRec ? ICON_FA_STOP " Stop Recording" : ICON_FA_CIRCLE " Record")) {
+            if (ImGui::Button(isRec ? ICON_FA_STOP "##Record" : ICON_FA_CIRCLE "##Record", ImVec2(32, 32))) {
                 if (isRec) {
                     AGK_CORE_INFO("[StudioApp] User STOPPED Recording");
                     m_engine->Stop();
@@ -323,6 +327,13 @@ namespace agk {
                     m_engine->Start();
                 }
             }
+            agk::UI::ItemTooltip(isRec ? "Stop Recording" : "Start Recording");
+            
+            ImGui::SameLine();
+            if (m_engine && ImGui::Button(ICON_FA_CAMERA "##Screenshot", ImVec2(32, 32))) {
+                m_engine->CaptureScreenshot("");
+            }
+            if (m_engine) agk::UI::ItemTooltip("Capture Screenshot (PNG)");
             
             ImGui::Separator();
             
@@ -549,6 +560,7 @@ namespace agk {
         
         m_liveMonitor.reset();
         m_replayer.reset();
+        m_sessionExplorer.reset();
 
         ImGui_ImplVulkan_Shutdown();
         ImGui_ImplSDL3_Shutdown();

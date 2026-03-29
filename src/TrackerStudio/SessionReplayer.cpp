@@ -1,6 +1,7 @@
 #include "SessionReplayer.hpp"
 #include "imgui_impl_vulkan.h"
 #include "implot.h"
+#include "IconsFontAwesome6.h"
 #include <agk/RecordingEngine/Log.hpp>
 #include <cstring>
 #include <chrono>
@@ -188,15 +189,26 @@ namespace agk {
             double vlsY[] = { -1.0, 2.0 };
             ImPlot::PlotLine("Cursor", vlsX, vlsY, 2);
 
-            std::vector<double> xsClick, ysClick;
-            std::vector<double> xsKey, ysKey;
+            ImPlotRect limits = ImPlot::GetPlotLimits();
+            
             for (const auto& ev : m_events) {
-                if (ev.type == "mouse_click") { xsClick.push_back(ev.time_sec); ysClick.push_back(1.0); }
-                else if (ev.type == "keyboard") { xsKey.push_back(ev.time_sec); ysKey.push_back(0.0); }
-            }
+                if (ev.time_sec < limits.X.Min || ev.time_sec > limits.X.Max) continue;
 
-            if (!xsClick.empty()) ImPlot::PlotScatter("Clicks", xsClick.data(), ysClick.data(), xsClick.size());
-            if (!xsKey.empty()) ImPlot::PlotScatter("Keys", xsKey.data(), ysKey.data(), xsKey.size());
+                if (ev.type == "mouse_click") {
+                    if (ev.button == 2) { // Right MBM
+                        ImPlot::PushStyleColor(ImPlotCol_InlayText, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+                        ImPlot::PlotText(ICON_FA_COMPUTER_MOUSE, ev.time_sec, 1.0);
+                    } else { // Left MBM or other
+                        ImPlot::PushStyleColor(ImPlotCol_InlayText, ImVec4(0.2f, 0.7f, 1.0f, 1.0f));
+                        ImPlot::PlotText(ICON_FA_COMPUTER_MOUSE, ev.time_sec, 1.0);
+                    }
+                    ImPlot::PopStyleColor();
+                } else if (ev.type == "keyboard") { 
+                    ImPlot::PushStyleColor(ImPlotCol_InlayText, ImVec4(1.0f, 0.6f, 0.0f, 1.0f));
+                    ImPlot::PlotText(ICON_FA_KEYBOARD, ev.time_sec, 0.0);
+                    ImPlot::PopStyleColor();
+                }
+            }
 
             if (ImPlot::IsPlotHovered() && ImGui::IsMouseDown(0)) {
                 ImPlotPoint mousePos = ImPlot::GetPlotMousePos();

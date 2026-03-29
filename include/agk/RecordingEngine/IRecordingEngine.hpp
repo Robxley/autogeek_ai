@@ -39,6 +39,8 @@ namespace agk {
     struct TargetState {
         std::string processName = "";
         std::string windowTitle = "";
+        int width = 0;
+        int height = 0;
     };
 
     /**
@@ -56,6 +58,12 @@ namespace agk {
         virtual bool Initialize(const std::string& configPath = "") = 0;
         virtual void Start() = 0;
         virtual void StartPreview() = 0; // Distinct silent preview
+        
+        /**
+         * @brief Request the engine to capture the currently observed frame as a PNG.
+         * If filename is empty, default to "thumbnail.png" in the session folder, or an auto-timestamp in root.
+         */
+        virtual void CaptureScreenshot(const std::string& filename = "") = 0;
         virtual void Stop() = 0;
         virtual void Pause() = 0;
         virtual void Resume() = 0;
