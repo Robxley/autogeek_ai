@@ -211,7 +211,7 @@ namespace agk {
             m_currentFrameIndex = 0;
             m_sync.Start();
             
-            if (!previewOnly) m_rawInput.Start();
+            m_rawInput.Start();
             if (audioOk) m_audioCapture.Start();
             
             m_recordingThread = std::thread(&RecordingEngineImpl::RecordingLoop, this);
@@ -224,8 +224,7 @@ namespace agk {
 
             m_isRunning = false;
             
-            if (!m_isPreviewing) m_rawInput.Stop();
-            
+            m_rawInput.Stop();
             m_audioCapture.Stop();
 
             if (m_recordingThread.joinable()) {
@@ -324,6 +323,7 @@ namespace agk {
                 stats.currentFPS = m_currentStats.currentFPS;
                 stats.keyboardActivityLevel = m_currentStats.keyboardActivityLevel;
                 stats.mouseDeltaActivity = m_currentStats.mouseDeltaActivity;
+                stats.isRecording = m_isRunning && !m_isPreviewing;
             }
             return stats;
         }

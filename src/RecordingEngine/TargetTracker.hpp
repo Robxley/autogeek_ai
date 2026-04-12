@@ -65,6 +65,9 @@ namespace agk {
         std::string m_searchWindowTitle;
         bool m_clientAreaOnly = true;
         mutable std::mutex m_mutex;
+        
+        HWND m_lastHwnd = nullptr;
+        DWORD m_lastPid = 0;
     };
 
 } // namespace agk

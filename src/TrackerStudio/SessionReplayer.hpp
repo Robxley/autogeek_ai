@@ -70,6 +70,7 @@ namespace agk {
         // Playback State
         bool m_isPlaying = false;
         double m_currentTime = 0.0;
+        double m_totalDuration = 0.0;
         double m_frameDuration = 0.0;
         int m_width = 0;
         int m_height = 0;

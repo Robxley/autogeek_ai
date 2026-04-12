@@ -31,6 +31,7 @@ namespace agk {
         float mouseDeltaActivity = 0.0f; // Distance moved dynamically
         float keyboardActivityLevel = 0.0f; // Keys pressed dynamically
         std::string pauseReason = ""; // Empty if running, contains reason if paused
+        bool isRecording = false;
     };
 
     /**

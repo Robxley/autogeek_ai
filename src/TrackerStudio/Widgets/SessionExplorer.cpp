@@ -217,6 +217,14 @@ namespace Widgets {
 
         ImGui::Separator();
         ImGui::TextDisabled("Root: %s", config.last_session_path.empty() ? "None" : config.last_session_path.c_str());
+        
+        // --- SEARCH BAR ---
+        ImGui::PushItemWidth(-1);
+        if (ImGui::InputTextWithHint("##SearchSessions", ICON_FA_MAGNIFYING_GLASS " Filter sessions...", m_searchFilter, IM_ARRAYSIZE(m_searchFilter))) {
+            // Filter updated
+        }
+        ImGui::PopItemWidth();
+        
         ImGui::Separator();
 
         if (config.last_session_path.empty() || !std::filesystem::exists(config.last_session_path)) {
@@ -229,9 +237,18 @@ namespace Widgets {
         try {
             // Sort paths in reverse chronological order
             std::vector<std::filesystem::path> paths;
+            std::string filter = m_searchFilter;
+            std::transform(filter.begin(), filter.end(), filter.begin(), ::tolower);
+
             for (const auto& entry : std::filesystem::directory_iterator(config.last_session_path)) {
                 if (entry.is_directory()) {
-                    paths.push_back(entry.path());
+                    std::string name = entry.path().filename().string();
+                    std::string lowerName = name;
+                    std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
+                    
+                    if (filter.empty() || lowerName.find(filter) != std::string::npos) {
+                        paths.push_back(entry.path());
+                    }
                 }
             }
             
@@ -239,10 +256,38 @@ namespace Widgets {
 
             for (const auto& path : paths) {
                 std::string folderName = path.filename().string();
-                
+                ImGui::PushID(folderName.c_str());
+
                 // Use a folder icon
                 bool isSelected = (replayer->GetCurrentSessionPath() == path.string());
                 
+                // --- CONTEXT MENU ---
+                if (ImGui::BeginPopupContextItem("SessionActions")) {
+                    if (ImGui::MenuItem(ICON_FA_LINK " Open in Explorer")) {
+                        std::string cmd = "explorer \"" + path.string() + "\"";
+                        system(cmd.c_str());
+                    }
+                    if (ImGui::MenuItem(ICON_FA_TRASH_CAN " Delete Session")) {
+                        ImGui::OpenPopup("Delete?##Confirm");
+                    }
+                    ImGui::EndPopup();
+                }
+
+                // Delete Confirmation Modal
+                if (ImGui::BeginPopupModal("Delete?##Confirm", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                    ImGui::Text("Are you sure you want to delete this session?\nThis will permanently remove the video and all data.");
+                    ImGui::Separator();
+                    if (ImGui::Button("Yes, Delete", ImVec2(120, 0))) {
+                        try {
+                            std::filesystem::remove_all(path);
+                        } catch(...) {}
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Cancel", ImVec2(120, 0))) { ImGui::CloseCurrentPopup(); }
+                    ImGui::EndPopup();
+                }
+
                 // Look for thumbnail
                 std::string thumbPath = path.string() + "/thumbnail.png";
                 SessionTexture* thumbTex = nullptr;
@@ -285,6 +330,8 @@ namespace Widgets {
                     AGK_CORE_INFO("[SessionExplorer] User requested to load session: {}", folderName);
                     replayer->OpenSession(path.string());
                 }
+
+                ImGui::PopID();
             }
         } catch (const std::exception& e) {
             ImGui::TextColored(ImVec4(1, 0, 0, 1), "Error reading directory: %s", e.what());

@@ -55,6 +55,8 @@ namespace agk {
         
         std::deque<TelemetryFrame> m_telemetryHistory;
         double m_lastTelemetryTime = 0.0;
+        EngineStats m_lastStats = {};
+        float m_lastTargetFPS = 60.0f;
     };
 
 } // namespace agk

@@ -49,6 +49,8 @@ namespace agk {
         if (m_frameDuration > 0) m_frameDuration = 1.0 / m_frameDuration;
         else m_frameDuration = 1.0 / 60.0; // Default
 
+        m_totalDuration = (double)m_fmtCtx->duration / AV_TIME_BASE;
+
         m_frame.reset(av_frame_alloc());
         m_frameRGBA.reset(av_frame_alloc());
         m_frameRGBA->width = m_width;
@@ -111,6 +113,12 @@ namespace agk {
                         // Convert to RGBA
                         sws_scale(m_swsCtx.get(), m_frame->data, m_frame->linesize, 0, m_height, m_frameRGBA->data, m_frameRGBA->linesize);
                         UpdateVulkanTexture(m_frameRGBA->data[0], m_frameRGBA->linesize[0]);
+                        
+                        // Update current time based on PTS
+                        if (m_frame->pts != AV_NOPTS_VALUE) {
+                            m_currentTime = m_frame->pts * av_q2d(m_fmtCtx->streams[m_videoStreamIndex]->time_base);
+                        }
+
                         frameReady = true;
                         av_packet_unref(pkt);
                         av_packet_free(&pkt);
@@ -134,14 +142,27 @@ namespace agk {
             m_isPlaying = !m_isPlaying;
             AGK_CORE_INFO("[Replayer] User clicked {}", m_isPlaying ? "PLAY" : "PAUSE");
         }
-        ImGui::SameLine();
         if (ImGui::Button("Stop")) {
             AGK_CORE_INFO("[Replayer] User clicked STOP (Rewinding to 0.0s)");
             m_isPlaying = false;
-            av_seek_frame(m_fmtCtx.get(), m_videoStreamIndex, 0, AVSEEK_FLAG_BACKWARD);
             m_currentTime = 0.0;
+            av_seek_frame(m_fmtCtx.get(), m_videoStreamIndex, 0, AVSEEK_FLAG_BACKWARD);
+            avcodec_flush_buffers(m_codecCtx.get());
             DecodeNextFrame();
         }
+
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(-100);
+        float seekTime = (float)m_currentTime;
+        if (ImGui::SliderFloat("##Timeline", &seekTime, 0.0f, (float)m_totalDuration, "%.1f s")) {
+            m_currentTime = seekTime;
+            int64_t targetPts = (int64_t)(m_currentTime / av_q2d(m_fmtCtx->streams[m_videoStreamIndex]->time_base));
+            av_seek_frame(m_fmtCtx.get(), m_videoStreamIndex, targetPts, AVSEEK_FLAG_BACKWARD);
+            avcodec_flush_buffers(m_codecCtx.get());
+            DecodeNextFrame();
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("%.1f / %.1f", m_currentTime, m_totalDuration);
 
         ImGui::BeginChild("ReplayView", ImVec2(0, ImGui::GetContentRegionAvail().y - 120), true);
         if (m_descriptorSet) {

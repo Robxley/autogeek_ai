@@ -39,7 +39,8 @@ function(agk_copy_dlls target)
         add_custom_command(TARGET ${target} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:SDL3::SDL3> $<TARGET_FILE_DIR:${target}>
             COMMAND ${CMAKE_COMMAND} -E copy_if_different ${FF_DLLS} $<TARGET_FILE_DIR:${target}>
-            COMMENT "Copying runtime DLLs for ${target}"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/assets" "$<TARGET_FILE_DIR:${target}>/assets"
+            COMMENT "Copying runtime DLLs and assets for ${target}"
         )
     endif()
 endfunction()

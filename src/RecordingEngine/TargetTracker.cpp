@@ -73,8 +73,12 @@ namespace agk {
             char title[MAX_PATH];
             GetWindowTextA(m_info.hwnd, title, MAX_PATH);
 
-            AGK_CORE_TRACE("[TargetTracker] Match Found! HWND: {:p}, Title: '{}', PID: {}, Rect: {}x{} at Pos({},{})", 
-                (void*)m_info.hwnd, title, m_info.processId, m_info.width, m_info.height, m_info.clientRect.left, m_info.clientRect.top);
+            if (m_info.hwnd != m_lastHwnd || m_info.processId != m_lastPid) {
+                AGK_CORE_INFO("[TargetTracker] Match Found! HWND: {:p}, Title: '{}', PID: {}, Rect: {}x{} at Pos({},{})", 
+                    (void*)m_info.hwnd, title, m_info.processId, m_info.width, m_info.height, m_info.clientRect.left, m_info.clientRect.top);
+                m_lastHwnd = m_info.hwnd;
+                m_lastPid = m_info.processId;
+            }
 
             HWND foreground = GetForegroundWindow();
             m_info.hasFocus = (foreground == m_info.hwnd);
@@ -83,7 +87,11 @@ namespace agk {
             return true;
         }
 
-        AGK_CORE_WARN("[TargetTracker] No window found matching process='{}' or title='{}'", processName, windowTitle);
+        if (m_lastHwnd != nullptr) {
+            AGK_CORE_WARN("[TargetTracker] Target Lost! No window matching process='{}' or title='{}'", processName, windowTitle);
+            m_lastHwnd = nullptr;
+            m_lastPid = 0;
+        }
         return false;
     }
 

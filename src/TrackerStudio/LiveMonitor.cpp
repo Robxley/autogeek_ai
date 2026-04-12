@@ -1,6 +1,7 @@
 #include "LiveMonitor.hpp"
 #include "imgui_impl_vulkan.h"
 #include "implot.h"
+#include "IconsFontAwesome6.h"
 #include <iostream>
 #include <cstring>
 
@@ -23,70 +24,88 @@ namespace agk {
     }
 
     void LiveMonitor::PushTelemetry(const EngineStats& stats, float targetFPS) {
-        double timeNow = stats.recordingTimeMs / 1000.0;
-        
-        if (timeNow - m_lastTelemetryTime >= 0.1) {
-            TelemetryFrame frame;
-            frame.time = timeNow;
-            frame.fps_ratio = (targetFPS > 0) ? (stats.currentFPS / targetFPS) : 0.0f;
-            frame.audio = stats.audioLevelRMS;
-            frame.mouse = std::min(1.0f, stats.mouseDeltaActivity / 100.0f);
-            frame.keyboard = std::min(1.0f, stats.keyboardActivityLevel / 10.0f);
-
-            m_telemetryHistory.push_back(frame);
-            m_lastTelemetryTime = timeNow;
-        }
-
-        while (!m_telemetryHistory.empty() && (timeNow - m_telemetryHistory.front().time) > 10.0) {
-            m_telemetryHistory.pop_front();
-        }
+        m_lastStats = stats;
+        m_lastTargetFPS = targetFPS;
     }
 
     void LiveMonitor::DrawTelemetryUI() {
-        if (m_telemetryHistory.empty()) return;
-
-        if (ImPlot::BeginPlot("Telemetry", ImVec2(-1, 0), ImPlotFlags_NoLegend | ImPlotFlags_NoTitle)) {
-            double maxTime = m_telemetryHistory.back().time;
-            maxTime = std::max(maxTime, 10.0);
+        // --- HUD: Summary Cards ---
+        if (ImGui::BeginTable("##StatusCards", 3, ImGuiTableFlags_SizingStretchSame)) {
+            ImGui::TableNextColumn();
             
-            ImPlot::SetupAxes(nullptr, nullptr, ImPlotAxisFlags_NoDecorations, ImPlotAxisFlags_NoDecorations);
-            ImPlot::SetupAxisLimits(ImAxis_X1, maxTime - 10.0, maxTime, ImGuiCond_Always);
-            ImPlot::SetupAxisLimits(ImAxis_Y1, -0.05, 1.2, ImGuiCond_Always);
-
-            std::vector<double> xs, ys_fps, ys_audio, ys_mouse, ys_keyboard;
-            for (const auto& tf : m_telemetryHistory) {
-                xs.push_back(tf.time);
-                ys_fps.push_back(tf.fps_ratio);
-                ys_audio.push_back(tf.audio);
-                ys_mouse.push_back(tf.mouse);
-                ys_keyboard.push_back(tf.keyboard);
+            // Card 1: FPS
+            {
+                float fps = m_lastStats.currentFPS;
+                float ratio = m_lastTargetFPS > 0 ? fps / m_lastTargetFPS : 0.0f;
+                ImVec4 statusColor = ratio >= 0.95f ? ImVec4(0.2f, 0.9f, 0.4f, 1.0f) : (ratio >= 0.8f ? ImVec4(1.0f, 0.8f, 0.2f, 1.0f) : ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+                
+                ImGui::BeginChild("CardFPS", ImVec2(0, 70), true, ImGuiWindowFlags_NoScrollbar);
+                ImGui::TextDisabled(ICON_FA_GAUGE " LIVE PERFORMANCE");
+                ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[0]); // Use default font but maybe bigger? 
+                ImGui::TextColored(statusColor, "%.1f", fps);
+                ImGui::SameLine();
+                ImGui::TextDisabled("FPS");
+                ImGui::PopFont();
+                
+                // Status bar
+                ImGui::GetWindowDrawList()->AddRectFilled(
+                    ImGui::GetCursorScreenPos(), 
+                    ImVec2(ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x * std::min(1.0f, ratio), ImGui::GetCursorScreenPos().y + 4),
+                    ImColor(statusColor)
+                );
+                ImGui::EndChild();
             }
 
-            if (!xs.empty()) { 
-                ImVec4 color = ImVec4(0.0f, 0.6f, 1.0f, 1.0f);
-                ImPlot::PlotShaded("FPS Status", xs.data(), ys_fps.data(), (int)xs.size(), 0.0, {ImPlotProp_FillColor, color, ImPlotProp_FillAlpha, 0.20f});
-                ImPlot::PlotLine("##FPSLine", xs.data(), ys_fps.data(), (int)xs.size(), {ImPlotProp_LineColor, color, ImPlotProp_LineWeight, 1.5f});
-            }
+            ImGui::TableNextColumn();
             
-            if (!xs.empty()) { 
-                ImVec4 color = ImVec4(0.2f, 0.9f, 0.4f, 1.0f);
-                ImPlot::PlotShaded("Audio Signal", xs.data(), ys_audio.data(), (int)xs.size(), 0.0, {ImPlotProp_FillColor, color, ImPlotProp_FillAlpha, 0.20f});
-                ImPlot::PlotLine("##AudioLine", xs.data(), ys_audio.data(), (int)xs.size(), {ImPlotProp_LineColor, color, ImPlotProp_LineWeight, 1.5f});
+            // Card 2: Duration
+            {
+                uint64_t ms = m_lastStats.recordingTimeMs;
+                int hours = (int)(ms / 3600000);
+                int mins = (int)((ms % 3600000) / 60000);
+                int secs = (int)((ms % 60000) / 1000);
+                
+                ImGui::BeginChild("CardTime", ImVec2(0, 70), true, ImGuiWindowFlags_NoScrollbar);
+                ImGui::TextDisabled(ICON_FA_CLOCK " SESSION CLOCK");
+                ImGui::Text("%02d:%02d:%02d", hours, mins, secs);
+                
+                // Pulsing recording indicator
+                if (m_lastStats.isRecording) {
+                    float pulse = (float)(1.0 + sin(ImGui::GetTime() * 6.0)) * 0.5f;
+                    ImGui::SameLine();
+                    ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 0.5f + pulse * 0.5f), "REC");
+                }
+                
+                ImGui::GetWindowDrawList()->AddRectFilled(
+                    ImGui::GetCursorScreenPos(), 
+                    ImVec2(ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x, ImGui::GetCursorScreenPos().y + 4),
+                    ImColor(0.2f, 0.2f, 0.2f, 1.0f)
+                );
+                ImGui::EndChild();
             }
 
-            if (!xs.empty()) { 
-                ImVec4 color = ImVec4(1.0f, 0.5f, 0.0f, 1.0f);
-                ImPlot::PlotShaded("Mouse Tracking", xs.data(), ys_mouse.data(), (int)xs.size(), 0.0, {ImPlotProp_FillColor, color, ImPlotProp_FillAlpha, 0.20f});
-                ImPlot::PlotLine("##MouseLine", xs.data(), ys_mouse.data(), (int)xs.size(), {ImPlotProp_LineColor, color, ImPlotProp_LineWeight, 1.5f});
+            ImGui::TableNextColumn();
+            
+            // Card 3: Activity
+            {
+                ImGui::BeginChild("CardActivity", ImVec2(0, 70), true, ImGuiWindowFlags_NoScrollbar);
+                ImGui::TextDisabled(ICON_FA_KEYBOARD " INPUT ACTIVITY");
+                
+                ImGui::Text("M: %llu", m_lastStats.mouseDeltaActivity);
+                ImGui::SameLine();
+                ImGui::Text("K: %llu", m_lastStats.keyboardActivityLevel);
+                
+                // VU Meter for Audio
+                float audio = std::min(1.0f, m_lastStats.audioLevelRMS * 5.0f); // Boost for visibility
+                ImGui::GetWindowDrawList()->AddRectFilled(
+                    ImGui::GetCursorScreenPos(), 
+                    ImVec2(ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x * audio, ImGui::GetCursorScreenPos().y + 4),
+                    ImColor(0.2f, 0.9f, 0.4f, 1.0f)
+                );
+                ImGui::EndChild();
             }
 
-            if (!xs.empty()) { 
-                ImVec4 color = ImVec4(0.8f, 0.3f, 1.0f, 1.0f);
-                ImPlot::PlotShaded("Keyboard Strokes", xs.data(), ys_keyboard.data(), (int)xs.size(), 0.0, {ImPlotProp_FillColor, color, ImPlotProp_FillAlpha, 0.20f});
-                ImPlot::PlotLine("##KybdLine", xs.data(), ys_keyboard.data(), (int)xs.size(), {ImPlotProp_LineColor, color, ImPlotProp_LineWeight, 1.5f});
-            }
-
-            ImPlot::EndPlot();
+            ImGui::EndTable();
         }
     }
 

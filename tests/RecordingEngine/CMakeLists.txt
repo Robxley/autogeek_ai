@@ -18,11 +18,11 @@ target_link_libraries(RecordingEngine_Tests
         dxgi
 )
 
-# Découvrir les tests automatiquement
-gtest_discover_tests(RecordingEngine_Tests)
+# Copie des DLLs
+agk_copy_dlls(RecordingEngine_Tests)
 
 # Activer C++20 pour les tests
 target_compile_features(RecordingEngine_Tests PRIVATE cxx_std_20)
 
-# Copie des DLLs
-agk_copy_dlls(RecordingEngine_Tests)
+# Découvrir les tests automatiquement
+gtest_discover_tests(RecordingEngine_Tests)

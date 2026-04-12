@@ -28,6 +28,7 @@ namespace Widgets {
         VkQueue m_queue;
 
         std::map<std::string, SessionTexture*> m_thumbnailCache;
+        char m_searchFilter[128] = "";
     };
 }
 }
