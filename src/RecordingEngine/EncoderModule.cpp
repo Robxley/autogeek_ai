@@ -225,10 +225,12 @@ namespace agk {
         std::lock_guard<std::mutex> lock(m_muxMutex);
         
         m_aInputFrame->nb_samples = sampleCount;
-        if (m_aInputFrame->data[0] == nullptr || m_aInputFrame->nb_samples > m_aInputFrame->nb_samples) {
+        if (m_aInputFrame->data[0] == nullptr || m_aInputFrame->nb_samples < sampleCount) {
              av_frame_get_buffer(m_aInputFrame, 0);
         }
-        memcpy(m_aInputFrame->data[0], data, sampleCount * 4 * 2);
+        
+        int bytesPerSample = av_get_bytes_per_sample(static_cast<AVSampleFormat>(m_aInputFrame->format));
+        memcpy(m_aInputFrame->data[0], data, sampleCount * bytesPerSample * m_aInputFrame->ch_layout.nb_channels);
 
         m_aFrame->nb_samples = av_rescale_rnd(swr_get_delay(m_swrCtx, m_aCodecCtx->sample_rate) + sampleCount, m_aCodecCtx->sample_rate, m_aCodecCtx->sample_rate, AV_ROUND_UP);
         if (m_aFrame->data[0] == nullptr || m_aFrame->nb_samples < m_aFrame->nb_samples) {

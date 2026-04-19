@@ -27,6 +27,8 @@ namespace agk {
         int vkCode = 0;
         double x = 0.0;
         double y = 0.0;
+        double dx = 0.0;
+        double dy = 0.0;
         int button = 0;
         double timestamp = 0.0;
         int64_t frameIndex = 0;

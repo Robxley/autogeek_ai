@@ -16,6 +16,7 @@ module;
 #include "SessionManager.hpp"
 #include "ImageUtils.hpp"
 #include "WASAPICapture.hpp"
+#include "GamepadModule.hpp"
 extern "C" {
 #include <libswscale/swscale.h>
 }
@@ -67,9 +68,16 @@ namespace agk {
             // Setup Input callback
             m_rawInput.Initialize([this](const InputEvent& event) {
                 if (m_isRunning && !m_isPaused) {
-                    if (event.type == InputType::KeyDown) {
-                        m_telemetryKeys++;
-                    } else if (event.type == InputType::MouseMove) {
+                    // Check config filters
+                    if (event.type == InputType::KeyDown || event.type == InputType::KeyUp) {
+                        if (!m_config->inputs.capture_keyboard) return;
+                        if (event.type == InputType::KeyDown) m_telemetryKeys++;
+                    } else if (event.type == InputType::MouseMove || event.type == InputType::MouseDown || event.type == InputType::MouseUp) {
+                        if (!m_config->inputs.capture_mouse) return;
+                    }
+
+                    // Track Telemetry Dist
+                    if (event.type == InputType::MouseMove) {
                         if (m_lastMouseX != -1 && m_lastMouseY != -1) {
                             double dx = event.x - m_lastMouseX;
                             double dy = event.y - m_lastMouseY;
@@ -81,12 +89,42 @@ namespace agk {
 
                     if (!m_isPreviewing) {
                         InputEvent trackedEvent = event;
+                        
+                        // Rounding logic for coordinates (3 decimals)
+                        auto round3 = [](double v) { return std::round(v * 1000.0) / 1000.0; };
+                        
+                        // Deduplication for MouseMove
+                        if (event.type == InputType::MouseMove) {
+                            if (round3(event.x) == round3(m_lastReportedX) && round3(event.y) == round3(m_lastReportedY)) {
+                                return; // Ignore silent moves
+                            }
+                            trackedEvent.dx = round3(event.x - m_lastReportedX);
+                            trackedEvent.dy = round3(event.y - m_lastReportedY);
+                            m_lastReportedX = event.x;
+                            m_lastReportedY = event.y;
+                        }
+
+                        // Coordinates for Down/Up too
+                        if (event.type == InputType::MouseDown || event.type == InputType::MouseUp) {
+                            m_lastReportedX = event.x;
+                            m_lastReportedY = event.y;
+                        }
+
                         trackedEvent.timestamp = m_sync.GetRelativeTimeMs();
                         trackedEvent.frameIndex = m_currentFrameIndex.load();
-                        m_serializer.SerializeEvent(trackedEvent);
+                        m_serializer.PushEvent(trackedEvent);
                     }
                 }
             }, &m_targetTracker);
+
+            m_gamepad.Initialize([this](const InputEvent& event) {
+                if (m_isRunning && !m_isPaused && m_config->inputs.capture_gamepad) {
+                    InputEvent trackedEvent = event;
+                    trackedEvent.timestamp = m_sync.GetRelativeTimeMs();
+                    trackedEvent.frameIndex = m_currentFrameIndex.load();
+                    m_serializer.PushEvent(trackedEvent);
+                }
+            }, m_config->inputs);
 
             m_sync.Start();
             return true;
@@ -212,6 +250,7 @@ namespace agk {
             m_sync.Start();
             
             m_rawInput.Start();
+            if (m_config->inputs.capture_gamepad) m_gamepad.Start();
             if (audioOk) m_audioCapture.Start();
             
             m_recordingThread = std::thread(&RecordingEngineImpl::RecordingLoop, this);
@@ -225,6 +264,7 @@ namespace agk {
             m_isRunning = false;
             
             m_rawInput.Stop();
+            m_gamepad.Stop();
             m_audioCapture.Stop();
 
             if (m_recordingThread.joinable()) {
@@ -550,6 +590,7 @@ namespace agk {
         EncoderModule m_encoder;
         SyncSystem m_sync;
         RawInputModule m_rawInput;
+        GamepadModule m_gamepad;
         EventSerializer m_serializer;
         TargetTracker m_targetTracker;
         SessionManager m_sessionManager;
@@ -575,6 +616,8 @@ namespace agk {
         mutable int m_lastMouseY = -1;
         mutable uint64_t m_lastStatsTimeMs = 0;
         mutable uint64_t m_lastStatsFrameCount = 0;
+        double m_lastReportedX = 0;
+        double m_lastReportedY = 0;
 
         // Preview
         mutable std::mutex m_previewMutex;

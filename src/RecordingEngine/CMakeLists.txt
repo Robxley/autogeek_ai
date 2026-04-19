@@ -21,11 +21,12 @@ target_sources(RecordingEngine
         TargetTracker.cpp
         SessionManager.cpp
         WASAPICapture.cpp
+        GamepadModule.cpp
 )
 
 # Liens avec les bibliothèques système Windows pour DXGI et WinRT
 if(WIN32)
-    target_link_libraries(RecordingEngine PRIVATE d3d11 dxgi ole32 windowsapp dwmapi)
+    target_link_libraries(RecordingEngine PRIVATE d3d11 dxgi ole32 windowsapp dwmapi xinput)
 endif()
 
 

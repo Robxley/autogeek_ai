@@ -136,13 +136,22 @@ namespace agk {
                             self->m_callback(event);
                         }
 
-                        if (flags & RI_MOUSE_LEFT_BUTTON_DOWN) {
-                            event.type = InputType::MouseDown;
-                            event.button = 0;
+                        auto sendBtn = [&](InputType type, int btn) {
+                            event.type = type;
+                            event.button = btn;
                             self->m_callback(event);
-                        } else if (flags & RI_MOUSE_LEFT_BUTTON_UP) {
-                            event.type = InputType::MouseUp;
-                            event.button = 0;
+                        };
+
+                        if (flags & RI_MOUSE_LEFT_BUTTON_DOWN)   sendBtn(InputType::MouseDown, 0);
+                        if (flags & RI_MOUSE_LEFT_BUTTON_UP)     sendBtn(InputType::MouseUp, 0);
+                        if (flags & RI_MOUSE_RIGHT_BUTTON_DOWN)  sendBtn(InputType::MouseDown, 1);
+                        if (flags & RI_MOUSE_RIGHT_BUTTON_UP)    sendBtn(InputType::MouseUp, 1);
+                        if (flags & RI_MOUSE_MIDDLE_BUTTON_DOWN) sendBtn(InputType::MouseDown, 2);
+                        if (flags & RI_MOUSE_MIDDLE_BUTTON_UP)   sendBtn(InputType::MouseUp, 2);
+                        
+                        if (flags & RI_MOUSE_WHEEL) {
+                            event.type = InputType::MouseWheel;
+                            event.button = (short)raw->data.mouse.usButtonData;
                             self->m_callback(event);
                         }
                     }

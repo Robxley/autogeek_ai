@@ -4,6 +4,10 @@
 #include <iostream>
 #include <agk/RecordingEngine/Log.hpp>
 
+#ifndef AUDCLNT_STREAMFLAGS_PROCESS_LOOPBACK
+#define AUDCLNT_STREAMFLAGS_PROCESS_LOOPBACK 0x00200000
+#endif
+
 namespace agk {
 
     WASAPICapture::WASAPICapture() : m_pwfx(nullptr), m_isRunning(false), m_targetProcessId(0), m_audioEvent(NULL) {}
@@ -68,26 +72,22 @@ namespace agk {
             return false;
         }
 
-        // Process Loopback integration (Windows 10 21H1+)
-        DWORD streamFlags = AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
+        // Process Loopback integration (Windows 11 / Windows 10 Build 20348+)
+        // Documentation: https://learn.microsoft.com/en-us/windows/win32/coreaudio/loopback-recording
         
-        // Flag for process-isolated loopback (Win10 build 20348+)
-        // #define AUDCLNT_STREAMFLAGS_PROCESS_LOOPBACK 0x00200000
-        const DWORD PROCESS_LOOPBACK_FLAG = 0x00200000;
-
+        DWORD streamFlags = AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
         if (m_targetProcessId != 0 && m_config.is_process_isolated) {
-            streamFlags |= PROCESS_LOOPBACK_FLAG;
-            AGK_CORE_INFO("[WASAPI] Initializing Process-Isolated Loopback for PID: {}", m_targetProcessId);
+            AGK_CORE_INFO("[WASAPI] Attempting Process-Isolated Loopback for PID: {}", m_targetProcessId);
             
-            // For process loopback, we need to provide the PID via AUDCLNT_PROCESS_LOOPBACK_PARAMS
-            // This usually requires IAudioClient3 or newer activation, but let's try the flag first.
-            // Note: Official activation usually involves ActivateAudioInterfaceAsync.
+            // Note: True process loopback requires ActivateAudioInterfaceAsync or IAudioClient3.
+            // For now, we use the flag which is supported on modern Windows 10/11.
+            hr = m_audioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, 
+                                          streamFlags | AUDCLNT_STREAMFLAGS_PROCESS_LOOPBACK, 
+                                          0, 0, m_pwfx, nullptr);
         } else {
-            streamFlags |= AUDCLNT_STREAMFLAGS_LOOPBACK;
-            AGK_CORE_INFO("[WASAPI] Initializing Global Loopback.");
+            hr = m_audioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, streamFlags | AUDCLNT_STREAMFLAGS_LOOPBACK, 0, 0, m_pwfx, NULL);
         }
 
-        hr = m_audioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, streamFlags, 0, 0, m_pwfx, (streamFlags & PROCESS_LOOPBACK_FLAG) ? (LPCGUID)&m_targetProcessId : NULL);
         if (FAILED(hr)) {
             AGK_CORE_ERROR("[WASAPI] Failed to initialize audio client: 0x{:08X}", (uint32_t)hr);
             return false;
