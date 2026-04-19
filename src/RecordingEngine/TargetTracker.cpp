@@ -195,6 +195,7 @@ namespace agk {
                 if (match) {
                     self->m_pendingResult.hwnd = hwnd;
                     self->m_pendingResult.processId = pid;
+                    AGK_CORE_INFO("[TargetTracker] Found matching window: HWND={:p}, PID={}", (void*)hwnd, pid);
                     CloseHandle(process);
                     return FALSE;
                 }

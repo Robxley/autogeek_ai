@@ -142,7 +142,10 @@ namespace agk {
     }
 
     bool EncoderModule::EncodeVideoFrame(const uint8_t* data, int linesize, int64_t frameIndex, int cropX, int cropY, int cropW, int cropH) {
-        if (!m_isInitialized) return false;
+        if (!m_isInitialized) {
+            AGK_CORE_ERROR("[Encoder] Encoder not initialized");
+            return false;
+        }
 
         static bool firstFrameLogged = false;
         if (!firstFrameLogged) {
@@ -192,7 +195,11 @@ namespace agk {
         uint8_t* srcDataArray[1] = { const_cast<uint8_t*>(srcData) };
         int srcLinesize[1] = { linesize };
 
-        sws_scale(m_swsCtx, srcDataArray, srcLinesize, 0, actualSourceHeight, m_vFrame->data, m_vFrame->linesize);
+        int result = sws_scale(m_swsCtx, srcDataArray, srcLinesize, 0, actualSourceHeight, m_vFrame->data, m_vFrame->linesize);
+        if (result < 0) {
+            AGK_CORE_ERROR("[Encoder] sws_scale failed with error code: {}", result);
+            return false;
+        }
 
         m_vFrame->pts = frameIndex;
 

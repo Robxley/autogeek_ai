@@ -30,6 +30,8 @@ namespace agk {
         if (err < 0) abort();
     }
 
+    void SetupLogging();
+
     StudioApp::StudioApp() {}
 
     StudioApp::~StudioApp() {
@@ -45,7 +47,7 @@ namespace agk {
         SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 #endif
 
-        agk::Log::Init();
+        SetupLogging();
         m_logUI = std::make_shared<Widgets::AppLogUI>();
         agk::Log::AddSink(m_logUI);
 
@@ -224,6 +226,47 @@ namespace agk {
         }
     }
 
+    void SetupLogging() {
+        std::filesystem::path exePath;
+        #ifdef _WIN32
+        char path[MAX_PATH];
+        GetModuleFileNameA(NULL, path, MAX_PATH);
+        exePath = std::filesystem::path(path);
+        #else
+        exePath = std::filesystem::canonical("/proc/self/exe");
+        #endif
+        
+        // Navigate to the project root directory (build/src/TrackerStudio/Release -> build -> project root)
+        std::filesystem::path parentPath = exePath.parent_path().parent_path().parent_path();
+        
+        // Construct the full path to the log directory
+        std::filesystem::path logPath = parentPath / ".." / ".." / "logs";
+        if (!std::filesystem::exists(logPath)) {
+            std::filesystem::create_directories(logPath);
+        }
+        
+        agk::Log::Init();
+        agk::Log::AddFileSink((logPath / "TrackerStudio.log").string());
+    }
+
+    std::string GetAssetPath(const std::string& relativePath) {
+        // Get the path of the executable
+        std::filesystem::path exePath;
+        #ifdef _WIN32
+        char path[MAX_PATH];
+        GetModuleFileNameA(NULL, path, MAX_PATH);
+        exePath = std::filesystem::path(path);
+        #else
+        exePath = std::filesystem::canonical("/proc/self/exe");
+        #endif
+        
+        // Navigate to the project root directory (build/src/TrackerStudio/Release -> build -> project root)
+        std::filesystem::path parentPath = exePath.parent_path().parent_path().parent_path();
+        
+        // Construct the full path to the asset
+        return (parentPath / ".." / ".." / "assets" / relativePath).string();
+    }
+
     void StudioApp::SetupFontAwesome() {
         ImGuiIO& io = ImGui::GetIO();
         io.Fonts->AddFontDefault();
@@ -238,8 +281,21 @@ namespace agk {
         icons_config.PixelSnapH = true;
         icons_config.GlyphMinAdvanceX = iconFontSize;
         
-        std::string fontPath = "assets/fonts/fa-solid-900.ttf";
-        io.Fonts->AddFontFromFileTTF(fontPath.c_str(), iconFontSize, &icons_config, icons_ranges);
+        std::string fontPath = GetAssetPath("fonts/fa-solid-900.ttf");
+        AGK_CORE_INFO("[StudioApp] Attempting to load font from: {}", fontPath);
+
+        if (!std::filesystem::exists(fontPath)) {
+            AGK_CORE_ERROR("[StudioApp] Font file not found: {}", fontPath);
+        } else {
+            AGK_CORE_INFO("[StudioApp] Font file found, loading...");
+        }
+
+        ImFont* font = io.Fonts->AddFontFromFileTTF(fontPath.c_str(), iconFontSize, &icons_config, icons_ranges);
+        if (font == nullptr) {
+            AGK_CORE_ERROR("[StudioApp] Failed to load font: {}", fontPath);
+        } else {
+            AGK_CORE_INFO("[StudioApp] Font loaded successfully");
+        }
         
         // Build the font atlas
         // Automatically handled by Vulkan backend on NewFrame
